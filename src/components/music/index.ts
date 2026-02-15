@@ -7,3 +7,4 @@ export { AdvancedMode } from './AdvancedMode';
 export { StemMixer } from './StemMixer';
 export { EffectsRack } from './EffectsRack';
 export { ExportPanel } from './ExportPanel';
+export { HardwareSettings } from './HardwareSettings';

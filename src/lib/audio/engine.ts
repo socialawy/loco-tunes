@@ -16,10 +16,12 @@ export function getAudioContext(): AudioContext {
 
 // Master output with effects chain
 export class AudioEngine {
-  private context: AudioContext;
+  private _context: AudioContext;
   private masterGain: GainNode;
   private compressor: DynamicsCompressorNode;
   private reverbNode: ConvolverNode | null = null;
+  private reverbGain: GainNode;
+  private dryGain: GainNode;
   private eqLow: BiquadFilterNode;
   private eqMid: BiquadFilterNode;
   private eqHigh: BiquadFilterNode;
@@ -30,52 +32,66 @@ export class AudioEngine {
   private pausedAt: number = 0;
   
   constructor() {
-    this.context = getAudioContext();
+    this._context = getAudioContext();
     
     // Create master chain
-    this.masterGain = this.context.createGain();
+    this.masterGain = this._context.createGain();
     this.masterGain.gain.value = 0.8;
     
     // EQ nodes
-    this.eqLow = this.context.createBiquadFilter();
+    this.eqLow = this._context.createBiquadFilter();
     this.eqLow.type = 'lowshelf';
     this.eqLow.frequency.value = 320;
     this.eqLow.gain.value = 0;
     
-    this.eqMid = this.context.createBiquadFilter();
+    this.eqMid = this._context.createBiquadFilter();
     this.eqMid.type = 'peaking';
     this.eqMid.frequency.value = 1000;
     this.eqMid.Q.value = 0.5;
     this.eqMid.gain.value = 0;
     
-    this.eqHigh = this.context.createBiquadFilter();
+    this.eqHigh = this._context.createBiquadFilter();
     this.eqHigh.type = 'highshelf';
     this.eqHigh.frequency.value = 3200;
     this.eqHigh.gain.value = 0;
     
     // Compressor
-    this.compressor = this.context.createDynamicsCompressor();
+    this.compressor = this._context.createDynamicsCompressor();
     this.compressor.threshold.value = -24;
     this.compressor.knee.value = 30;
     this.compressor.ratio.value = 4;
     this.compressor.attack.value = 0.003;
     this.compressor.release.value = 0.25;
     
+    // Reverb wet/dry mix
+    this.reverbGain = this._context.createGain();
+    this.reverbGain.gain.value = 0.3;
+    this.dryGain = this._context.createGain();
+    this.dryGain.gain.value = 0.7;
+    
     // Connect chain: source -> eq -> compressor -> master -> destination
     this.eqLow.connect(this.eqMid);
     this.eqMid.connect(this.eqHigh);
     this.eqHigh.connect(this.compressor);
-    this.compressor.connect(this.masterGain);
-    this.masterGain.connect(this.context.destination);
+    this.compressor.connect(this.dryGain);
+    this.compressor.connect(this.reverbGain);
+    this.dryGain.connect(this.masterGain);
+    this.reverbGain.connect(this.masterGain);
+    this.masterGain.connect(this._context.destination);
     
     // Create reverb (async)
     this.createReverb();
   }
   
+  // Public getter for context
+  get context(): AudioContext {
+    return this._context;
+  }
+  
   private async createReverb(): Promise<void> {
-    const sampleRate = this.context.sampleRate;
+    const sampleRate = this._context.sampleRate;
     const length = sampleRate * 2; // 2 second reverb
-    const impulse = this.context.createBuffer(2, length, sampleRate);
+    const impulse = this._context.createBuffer(2, length, sampleRate);
     
     for (let channel = 0; channel < 2; channel++) {
       const channelData = impulse.getChannelData(channel);
@@ -85,8 +101,9 @@ export class AudioEngine {
       }
     }
     
-    this.reverbNode = this.context.createConvolver();
+    this.reverbNode = this._context.createConvolver();
     this.reverbNode.buffer = impulse;
+    this.reverbNode.connect(this.reverbGain);
   }
   
   // Synthesize a note using oscillators
@@ -110,11 +127,11 @@ export class AudioEngine {
       release = 0.3,
     } = options;
     
-    const osc = this.context.createOscillator();
+    const osc = this._context.createOscillator();
     osc.type = oscillatorType;
     osc.frequency.value = midiToFrequency(note.pitch);
     
-    const gainNode = this.context.createGain();
+    const gainNode = this._context.createGain();
     gainNode.gain.value = 0;
     
     // ADSR envelope
@@ -141,7 +158,7 @@ export class AudioEngine {
     const spec = createDrumSynthSpec(drumType);
     const nodes: AudioNode[] = [];
     
-    const gainNode = this.context.createGain();
+    const gainNode = this._context.createGain();
     gainNode.gain.value = 0;
     gainNode.gain.linearRampToValueAtTime(velocity / 127 * 0.6, startTime);
     gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + spec.decay);
@@ -149,14 +166,14 @@ export class AudioEngine {
     
     if (spec.type === 'noise') {
       // Create noise buffer
-      const bufferSize = this.context.sampleRate * spec.decay;
-      const noiseBuffer = this.context.createBuffer(1, bufferSize, this.context.sampleRate);
+      const bufferSize = this._context.sampleRate * spec.decay;
+      const noiseBuffer = this._context.createBuffer(1, bufferSize, this._context.sampleRate);
       const noiseData = noiseBuffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
         noiseData[i] = Math.random() * 2 - 1;
       }
       
-      const noiseSource = this.context.createBufferSource();
+      const noiseSource = this._context.createBufferSource();
       noiseSource.buffer = noiseBuffer;
       noiseSource.start(startTime);
       nodes.push(noiseSource);
@@ -164,7 +181,7 @@ export class AudioEngine {
       let lastNode: AudioNode = noiseSource;
       
       if (spec.filter) {
-        const filter = this.context.createBiquadFilter();
+        const filter = this._context.createBiquadFilter();
         filter.type = spec.filter.type;
         filter.frequency.value = spec.filter.frequency;
         if (spec.filter.Q) filter.Q.value = spec.filter.Q;
@@ -176,7 +193,7 @@ export class AudioEngine {
       lastNode.connect(gainNode);
     } else {
       // Oscillator-based (kick, toms)
-      const osc = this.context.createOscillator();
+      const osc = this._context.createOscillator();
       osc.frequency.value = spec.frequency || 150;
       osc.frequency.setValueAtTime(spec.frequency || 150, startTime);
       
@@ -194,7 +211,7 @@ export class AudioEngine {
       let lastNode: AudioNode = osc;
       
       if (spec.filter) {
-        const filter = this.context.createBiquadFilter();
+        const filter = this._context.createBiquadFilter();
         filter.type = spec.filter.type;
         filter.frequency.value = spec.filter.frequency;
         lastNode.connect(filter);
@@ -215,9 +232,9 @@ export class AudioEngine {
     duration: number,
     stemType: StemType
   ): AudioBuffer {
-    const sampleRate = this.context.sampleRate;
+    const sampleRate = this._context.sampleRate;
     const numSamples = Math.ceil(duration * sampleRate);
-    const buffer = this.context.createBuffer(2, numSamples, sampleRate);
+    const buffer = this._context.createBuffer(2, numSamples, sampleRate);
     
     const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
     
@@ -338,7 +355,7 @@ export class AudioEngine {
     duration: number,
     stemType: StemType
   ): Promise<AudioBuffer> {
-    const sampleRate = this.context.sampleRate;
+    const sampleRate = this._context.sampleRate;
     const numSamples = Math.ceil(duration * sampleRate);
     const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
     
@@ -451,11 +468,96 @@ export class AudioEngine {
     return offlineContext.startRendering();
   }
   
+  // Mix multiple stems into a single buffer
+  async mixStemsToBuffer(
+    stems: Stem[],
+    duration: number,
+    effects?: EffectSettings
+  ): Promise<AudioBuffer> {
+    const sampleRate = this._context.sampleRate;
+    const numSamples = Math.ceil(duration * sampleRate);
+    const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
+    
+    // Create master chain for offline context
+    const masterGain = offlineContext.createGain();
+    masterGain.gain.value = 0.8;
+    
+    // EQ
+    const eqLow = offlineContext.createBiquadFilter();
+    eqLow.type = 'lowshelf';
+    eqLow.frequency.value = 320;
+    
+    const eqMid = offlineContext.createBiquadFilter();
+    eqMid.type = 'peaking';
+    eqMid.frequency.value = 1000;
+    eqMid.Q.value = 0.5;
+    
+    const eqHigh = offlineContext.createBiquadFilter();
+    eqHigh.type = 'highshelf';
+    eqHigh.frequency.value = 3200;
+    
+    // Compressor
+    const compressor = offlineContext.createDynamicsCompressor();
+    compressor.threshold.value = -24;
+    compressor.knee.value = 30;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    
+    // Apply effects if provided
+    if (effects) {
+      if (effects.eq.enabled) {
+        eqLow.gain.value = effects.eq.low;
+        eqMid.gain.value = effects.eq.mid;
+        eqHigh.gain.value = effects.eq.high;
+      }
+      if (effects.compressor.enabled) {
+        compressor.threshold.value = effects.compressor.threshold;
+        compressor.ratio.value = effects.compressor.ratio;
+        compressor.attack.value = effects.compressor.attack;
+        compressor.release.value = effects.compressor.release;
+      }
+    }
+    
+    // Connect chain
+    eqLow.connect(eqMid);
+    eqMid.connect(eqHigh);
+    eqHigh.connect(compressor);
+    compressor.connect(masterGain);
+    masterGain.connect(offlineContext.destination);
+    
+    // Check for solo
+    const hasSolo = stems.some(s => s.solo);
+    
+    // Mix stems
+    for (const stem of stems) {
+      if (!stem.audioBuffer) continue;
+      if (stem.muted) continue;
+      if (hasSolo && !stem.solo) continue;
+      
+      const source = offlineContext.createBufferSource();
+      source.buffer = stem.audioBuffer;
+      
+      const gainNode = offlineContext.createGain();
+      gainNode.gain.value = stem.volume;
+      
+      source.connect(gainNode);
+      gainNode.connect(eqLow);
+      source.start(0);
+    }
+    
+    return offlineContext.startRendering();
+  }
+  
   // Update effects
   setEffects(effects: EffectSettings): void {
-    // Reverb
-    if (this.reverbNode && effects.reverb.enabled) {
-      // Apply reverb via wet/dry mix would require more complex routing
+    // Reverb wet/dry mix
+    if (effects.reverb.enabled) {
+      this.reverbGain.gain.value = effects.reverb.mix;
+      this.dryGain.gain.value = 1 - effects.reverb.mix;
+    } else {
+      this.reverbGain.gain.value = 0;
+      this.dryGain.gain.value = 1;
     }
     
     // EQ
@@ -486,7 +588,7 @@ export class AudioEngine {
   // Get current time
   getCurrentTime(): number {
     if (this.isPlaying) {
-      return this.context.currentTime - this.startTime + this.pausedAt;
+      return this._context.currentTime - this.startTime + this.pausedAt;
     }
     return this.pausedAt;
   }

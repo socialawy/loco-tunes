@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,8 +13,9 @@ import {
   StemMixer,
   EffectsRack,
   ExportPanel,
+  HardwareSettings,
 } from '@/components/music';
-import { Music, Settings2, Layers, Sparkles, Github } from 'lucide-react';
+import { Music, Settings2, Layers, Sparkles } from 'lucide-react';
 
 // Simple mounted check without useEffect
 const emptySubscribe = () => () => {};
@@ -134,6 +135,13 @@ export default function LocoTunesPage() {
                   >
                     Effects
                   </TabsTrigger>
+                  <TabsTrigger 
+                    value="hardware"
+                    className="data-[state=active]:bg-violet-500 data-[state=active]:text-white"
+                  >
+                    <Settings2 className="h-4 w-4 mr-2" />
+                    Hardware
+                  </TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="timeline" className="mt-4">
@@ -146,6 +154,10 @@ export default function LocoTunesPage() {
                 
                 <TabsContent value="effects" className="mt-4">
                   <EffectsRack />
+                </TabsContent>
+                
+                <TabsContent value="hardware" className="mt-4">
+                  <HardwareSettings />
                 </TabsContent>
               </Tabs>
             ) : (
@@ -162,7 +174,7 @@ export default function LocoTunesPage() {
           <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
             <FeatureCard
               icon={<Sparkles className="h-6 w-6" />}
-              title="AI-Powered Generation"
+              title="Algorithms-Powered Generation"
               description="Generate unique music with procedural algorithms. Multiple genres and moods available."
             />
             <FeatureCard

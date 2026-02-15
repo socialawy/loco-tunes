@@ -161,6 +161,22 @@ export async function generateStemVariation(
   };
 }
 
+// Helper function to manually override hardware detection
+export function setHardwareOverride(memory: number, cores?: number) {
+  localStorage.setItem('loco-tunes-memory-override', memory.toString());
+  if (cores) {
+    localStorage.setItem('loco-tunes-cores-override', cores.toString());
+  }
+  console.log('Hardware override set:', { memory, cores });
+}
+
+// Helper function to clear manual override
+export function clearHardwareOverride() {
+  localStorage.removeItem('loco-tunes-memory-override');
+  localStorage.removeItem('loco-tunes-cores-override');
+  console.log('Hardware override cleared');
+}
+
 // Detect hardware capabilities
 export function detectHardwareCapabilities(): {
   level: 'basic' | 'standard' | 'pro';
@@ -169,10 +185,82 @@ export function detectHardwareCapabilities(): {
   maxDuration: number;
   recommendedComplexity: number;
   hasWebAudio: boolean;
+  networkType: string;
 } {
-  const cores = navigator.hardwareConcurrency || 4;
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory || 8;
+  // SSR safety check
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return {
+      level: 'standard',
+      cores: 4,
+      memory: 8,
+      maxDuration: 30,
+      recommendedComplexity: 0.5,
+      hasWebAudio: false,
+      networkType: 'unknown'
+    };
+  }
+
+  // Check for manual override in localStorage
+  const manualMemory = localStorage.getItem('loco-tunes-memory-override');
+  const manualCores = localStorage.getItem('loco-tunes-cores-override');
+
+  const cores = manualCores ? parseInt(manualCores) : navigator.hardwareConcurrency || 4;
+  
+  // Better memory detection with multiple fallbacks
+  let memory = 8; // default fallback
+  try {
+    if (manualMemory) {
+      memory = parseInt(manualMemory);
+    } else {
+      // Try deviceMemory API first
+      const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+      memory = deviceMemory || 8;
+      
+      // Try performance.memory as additional check (Chrome)
+      if (typeof performance !== 'undefined' && (performance as any).memory) {
+        const jsHeapSizeLimit = (performance as any).memory.jsHeapSizeLimit;
+        const estimatedMemory = jsHeapSizeLimit / (1024 ** 3); // Convert to GB
+        
+        // Use the higher of deviceMemory or estimatedMemory
+        if (estimatedMemory > memory) {
+          memory = Math.round(estimatedMemory);
+        }
+        
+        // Additional heuristic: if we have 8+ cores but memory seems low, assume at least 16GB
+        // BUT only on desktop, not mobile (to avoid over-allocating memory on mobile)
+        const isMobile = (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                      ((navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints && (navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints > 0));
+        
+        if (!isMobile && cores >= 8 && memory < 16) {
+          console.log('Heuristic: 8+ cores detected on desktop, assuming 16GB RAM');
+          memory = 16;
+        } else if (isMobile) {
+          console.log('Mobile device detected, using conservative memory detection');
+          // On mobile, be more conservative - don't assume high memory
+          memory = Math.min(memory, 8); // Cap mobile at 8GB max
+        }
+      }
+      
+      // Clamp to reasonable range
+      memory = Math.max(4, Math.min(memory, 128));
+    }
+    
+    console.log('Hardware detection:', { cores, memory, deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory, manualOverride: !!manualMemory });
+  } catch (e) {
+    console.warn('Could not detect memory, using default:', e);
+  }
   const hasWebAudio = typeof AudioContext !== 'undefined' || typeof (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext !== 'undefined';
+  
+  // Network detection
+  let networkType = 'unknown';
+  try {
+    if ('connection' in navigator) {
+      const connection = (navigator as Navigator & { connection: { effectiveType?: string } }).connection;
+      networkType = connection?.effectiveType || 'unknown';
+    }
+  } catch (e) {
+    console.warn('Network detection failed:', e);
+  }
   
   let level: 'basic' | 'standard' | 'pro' = 'standard';
   let maxDuration = 30;
@@ -199,6 +287,7 @@ export function detectHardwareCapabilities(): {
     maxDuration,
     recommendedComplexity,
     hasWebAudio,
+    networkType,
   };
 }
 

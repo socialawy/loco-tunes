@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useMusicStore } from '@/stores/musicStore';
 import type { StemType } from '@/types/music';
 import { STEM_COLORS } from '@/types/music';
@@ -15,11 +15,12 @@ const STEM_LABELS: Record<StemType, string> = {
 };
 
 export function AdvancedMode() {
-  const { currentTrack, currentTime, isPlaying } = useMusicStore();
+  const { currentTrack, currentTime, isPlaying, updateCurrentTime, restartPlayback, stopTrack, playTrack } = useMusicStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   
   // Redraw on state changes
   useEffect(() => {
@@ -116,9 +117,88 @@ export function AdvancedMode() {
       ctx.moveTo(playheadX, 0);
       ctx.lineTo(playheadX, height);
       ctx.stroke();
+      
+      // Playhead handle at top
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath();
+      ctx.moveTo(playheadX - 6, 0);
+      ctx.lineTo(playheadX + 6, 0);
+      ctx.lineTo(playheadX, 10);
+      ctx.closePath();
+      ctx.fill();
     }
     
   }, [currentTrack, currentTime, zoom, scrollOffset, isPlaying]);
+  
+  // Handle click to seek
+  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !currentTrack) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left + scrollOffset;
+    const pixelsPerSecond = 50 * zoom;
+    const clickedTime = x / pixelsPerSecond;
+    
+    // Clamp to track duration
+    const newTime = Math.max(0, Math.min(clickedTime, currentTrack.duration));
+    
+    // Update time
+    updateCurrentTime(newTime);
+    
+    // If playing, restart at new position
+    if (isPlaying) {
+      stopTrack();
+      setTimeout(() => {
+        updateCurrentTime(newTime);
+        playTrack();
+      }, 10);
+    }
+  }, [currentTrack, scrollOffset, zoom, isPlaying, updateCurrentTime, stopTrack, playTrack]);
+  
+  // Handle drag to scrub
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    handleCanvasClick(e);
+  }, [handleCanvasClick]);
+  
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging || !currentTrack) return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left + scrollOffset;
+    const pixelsPerSecond = 50 * zoom;
+    const clickedTime = x / pixelsPerSecond;
+    
+    // Clamp to track duration
+    const newTime = Math.max(0, Math.min(clickedTime, currentTrack.duration));
+    updateCurrentTime(newTime);
+  }, [isDragging, currentTrack, scrollOffset, zoom, updateCurrentTime]);
+  
+  const handleMouseUp = useCallback(() => {
+    if (isDragging && isPlaying) {
+      // Restart playback at new position after drag
+      setTimeout(() => {
+        playTrack();
+      }, 10);
+    }
+    setIsDragging(false);
+  }, [isDragging, isPlaying, playTrack]);
+  
+  // Add global mouse up listener
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isDragging) {
+        handleMouseUp();
+      }
+    };
+    
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [isDragging, handleMouseUp]);
   
   if (!currentTrack) {
     return (
@@ -174,14 +254,27 @@ export function AdvancedMode() {
             <ZoomIn className="h-4 w-4" />
           </Button>
         </div>
+        
+        {/* Current time display */}
+        <div className="text-sm font-mono text-violet-400">
+          {formatTime(currentTime)} / {formatTime(currentTrack.duration)}
+        </div>
       </div>
       
       {/* Timeline Canvas */}
       <div 
         ref={containerRef}
-        className="h-64 overflow-hidden rounded-xl border border-[#2a2a4e]"
+        className="h-64 overflow-hidden rounded-xl border border-[#2a2a4e] cursor-crosshair"
       >
-        <canvas ref={canvasRef} className="w-full h-full" />
+        <canvas 
+          ref={canvasRef} 
+          className="w-full h-full"
+          onClick={handleCanvasClick}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={() => isDragging && handleMouseUp()}
+        />
       </div>
       
       {/* Time ruler */}
@@ -192,6 +285,11 @@ export function AdvancedMode() {
         <span>{formatTime((currentTrack.duration * 3) / 4)}</span>
         <span>{formatTime(currentTrack.duration)}</span>
       </div>
+      
+      {/* Instructions */}
+      <p className="text-xs text-gray-600 text-center">
+        Click anywhere on the timeline to seek • Drag to scrub
+      </p>
     </div>
   );
 }

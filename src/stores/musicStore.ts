@@ -1,6 +1,7 @@
 // Zustand store for Loco-Tunes state management
 
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import type { 
   GenerationParams, 
   Track, 
@@ -12,7 +13,7 @@ import type {
 import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
-import { exportTrackToMidi, downloadBlob, generateFilename, exportStemToWav, audioBufferToWav } from '@/lib/audio/export';
+import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
 
 interface MusicStore {
   // Generation params
@@ -35,9 +36,11 @@ interface MusicStore {
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
   generationProgress: number;
+  isExporting: boolean;
   
-  // Audio sources
+  // Audio sources and gain nodes for live control
   activeSources: Map<StemType, AudioBufferSourceNode>;
+  activeGains: Map<StemType, GainNode>;
   
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
@@ -50,10 +53,11 @@ interface MusicStore {
   toggleStemMute: (stemType: StemType) => void;
   toggleStemSolo: (stemType: StemType) => void;
   setEffects: (effects: Partial<EffectSettings>) => void;
-  exportWav: () => void;
+  exportWav: () => Promise<void>;
   exportMidi: () => void;
   setMode: (mode: 'simple' | 'advanced') => void;
   updateCurrentTime: (time: number) => void;
+  restartPlayback: () => void;
 }
 
 export const useMusicStore = create<MusicStore>((set, get) => ({
@@ -67,7 +71,9 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   mode: 'simple',
   isGenerating: false,
   generationProgress: 0,
+  isExporting: false,
   activeSources: new Map(),
+  activeGains: new Map(),
   
   // Set generation params
   setParams: (newParams) => set((state) => ({
@@ -99,11 +105,14 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
         currentTime: 0,
       });
       
+      toast.success('Track generated successfully!');
+      
       // Auto-play after generation
       setTimeout(() => get().playTrack(), 100);
       
     } catch (error) {
       console.error('Generation failed:', error);
+      toast.error('Failed to generate track');
       set({ isGenerating: false, generationProgress: 0 });
     }
   },
@@ -127,23 +136,46 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
         } : null,
         isGenerating: false,
       }));
+      
+      toast.success(`${stemType} stem regenerated`);
+      
+      // Restart playback if playing to hear changes
+      if (get().isPlaying) {
+        get().restartPlayback();
+      }
     } catch (error) {
       console.error('Stem regeneration failed:', error);
+      toast.error(`Failed to regenerate ${stemType} stem`);
       set({ isGenerating: false });
     }
   },
   
+  // Restart playback at current time (used when mixer controls change)
+  restartPlayback: () => {
+    const { isPlaying, currentTime } = get();
+    if (!isPlaying) return;
+    
+    // Pause, then resume at same position
+    get().pauseTrack();
+    setTimeout(() => {
+      get().playTrack();
+    }, 10);
+  },
+  
   // Play the track
   playTrack: () => {
-    const { currentTrack, isPlaying, activeSources } = get();
+    const { currentTrack, isPlaying, activeSources, effects } = get();
     if (!currentTrack || isPlaying) return;
     
     const engine = getAudioEngine();
-    const context = engine['context'];
+    const context = engine.context;
     
     // Check if context is suspended (browser autoplay policy)
     if (context.state === 'suspended') {
-      context.resume();
+      context.resume().catch(err => {
+        console.error('Failed to resume AudioContext:', err);
+        toast.error('Click anywhere to enable audio');
+      });
     }
     
     // Stop any existing sources
@@ -155,7 +187,11 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       }
     });
     
+    // Apply effects before playback
+    engine.setEffects(effects);
+    
     const newSources = new Map<StemType, AudioBufferSourceNode>();
+    const newGains = new Map<StemType, GainNode>();
     
     // Check if any stem is soloed
     const hasSolo = currentTrack.stems.some(s => s.solo);
@@ -177,9 +213,10 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       
       source.start(0, get().currentTime);
       newSources.set(stem.type, source);
+      newGains.set(stem.type, gainNode);
     }
     
-    set({ isPlaying: true, activeSources: newSources });
+    set({ isPlaying: true, activeSources: newSources, activeGains: newGains });
     
     // Update time during playback
     const startTime = context.currentTime - get().currentTime;
@@ -215,7 +252,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       }
     });
     
-    set({ isPlaying: false, activeSources: new Map() });
+    set({ isPlaying: false, activeSources: new Map(), activeGains: new Map() });
   },
   
   // Stop the track
@@ -231,11 +268,14 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       }
     });
     
-    set({ isPlaying: false, currentTime: 0, activeSources: new Map() });
+    set({ isPlaying: false, currentTime: 0, activeSources: new Map(), activeGains: new Map() });
   },
   
-  // Set stem volume
+  // Set stem volume with smooth ramping during playback
   setStemVolume: (stemType: StemType, volume: number) => {
+    const { isPlaying, activeGains } = get();
+    
+    // Update state
     set((state) => ({
       currentTrack: state.currentTrack ? {
         ...state.currentTrack,
@@ -244,9 +284,20 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
         ),
       } : null,
     }));
+    
+    // Apply smooth ramp to active gain node during playback
+    if (isPlaying) {
+      const gainNode = activeGains.get(stemType);
+      if (gainNode) {
+        const engine = getAudioEngine();
+        const context = engine.context;
+        // Smooth ramp over 15ms to prevent clicks
+        gainNode.gain.setTargetAtTime(volume, context.currentTime, 0.015);
+      }
+    }
   },
   
-  // Toggle stem mute
+  // Toggle stem mute with playback restart
   toggleStemMute: (stemType: StemType) => {
     set((state) => ({
       currentTrack: state.currentTrack ? {
@@ -256,9 +307,14 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
         ),
       } : null,
     }));
+    
+    // Restart playback to apply mute change
+    if (get().isPlaying) {
+      get().restartPlayback();
+    }
   },
   
-  // Toggle stem solo
+  // Toggle stem solo with playback restart
   toggleStemSolo: (stemType: StemType) => {
     set((state) => ({
       currentTrack: state.currentTrack ? {
@@ -268,32 +324,53 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
         ),
       } : null,
     }));
+    
+    // Restart playback to apply solo change
+    if (get().isPlaying) {
+      get().restartPlayback();
+    }
   },
   
-  // Set effects
+  // Set effects and apply to engine
   setEffects: (newEffects: Partial<EffectSettings>) => {
     set((state) => ({
       effects: { ...state.effects, ...newEffects },
     }));
     
-    // Apply to audio engine
+    // Apply to audio engine immediately
     const engine = getAudioEngine();
     engine.setEffects(get().effects);
   },
   
-  // Export to WAV
-  exportWav: () => {
-    const { currentTrack } = get();
+  // Export to WAV with all stems mixed
+  exportWav: async () => {
+    const { currentTrack, effects } = get();
     if (!currentTrack) return;
     
-    // For now, export mixed stems
-    // In full implementation, we'd render all stems to a single buffer
-    const stemWithBuffer = currentTrack.stems.find(s => s.audioBuffer);
-    if (!stemWithBuffer?.audioBuffer) return;
+    set({ isExporting: true });
+    toast.info('Exporting WAV file...');
     
-    const blob = audioBufferToWav(stemWithBuffer.audioBuffer);
-    const filename = generateFilename(currentTrack, 'wav');
-    downloadBlob(blob, filename);
+    try {
+      const engine = getAudioEngine();
+      
+      // Mix all stems together with effects
+      const mixedBuffer = await engine.mixStemsToBuffer(
+        currentTrack.stems,
+        currentTrack.duration,
+        effects
+      );
+      
+      const blob = audioBufferToWav(mixedBuffer);
+      const filename = generateFilename(currentTrack, 'wav');
+      downloadBlob(blob, filename);
+      
+      toast.success('WAV export complete!');
+    } catch (error) {
+      console.error('WAV export failed:', error);
+      toast.error('Failed to export WAV file');
+    } finally {
+      set({ isExporting: false });
+    }
   },
   
   // Export to MIDI
@@ -301,14 +378,20 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     const { currentTrack } = get();
     if (!currentTrack) return;
     
-    const blob = exportTrackToMidi(currentTrack);
-    const filename = generateFilename(currentTrack, 'mid');
-    downloadBlob(blob, filename);
+    try {
+      const blob = exportTrackToMidi(currentTrack);
+      const filename = generateFilename(currentTrack, 'mid');
+      downloadBlob(blob, filename);
+      toast.success('MIDI export complete!');
+    } catch (error) {
+      console.error('MIDI export failed:', error);
+      toast.error('Failed to export MIDI file');
+    }
   },
   
   // Set UI mode
   setMode: (mode: 'simple' | 'advanced') => set({ mode }),
   
-  // Update current time
+  // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
 }));
