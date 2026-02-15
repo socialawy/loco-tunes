@@ -265,15 +265,13 @@ For security concerns, please see our [Security Policy](SECURITY.md).
 - **Issues**: [GitHub Issues](https://github.com/socialawy/loco-tunes/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/socialawy/loco-tunes/discussions)
 
-
 ## 🙏 Acknowledgments
 
 - Web Audio API community for audio processing insights
 - shadcn/ui for beautiful, accessible components
-- Next.js team for the excellent framework
+- Next.js team for excellent framework
 - All contributors and beta testers
 
 ---
 
-**Made with ❤️ for 🎵 by [Socialawy](https://github.com/socialawy)**
-
+**Made with ❤️ for 🎵 and content creators, by [Socialawy](https://github.com/socialawy)**
