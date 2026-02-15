@@ -218,14 +218,14 @@ src/
 ## 🧪 Testing
 
 ```bash
-# Run tests
+# Run tests in watch mode
 npm run test
 
-# Run tests in watch mode
-npm run test:watch
+# Run tests once
+npm run test:run
 
-# Generate coverage report
-npm run test:coverage
+# Run tests with UI interface
+npm run test:ui
 ```
 
 ### Audio Testing
