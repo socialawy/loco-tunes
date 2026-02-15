@@ -1,0 +1,1843 @@
+- src\lib\audio\generator.ts
+```
+// Main music generator combining all components
+
+import type { GenerationParams, Stem, StemType, Track, Note } from '@/types/music';
+import { DEFAULT_EFFECTS, STEM_COLORS } from '@/types/music';
+import { noteToMidi, generateChordProgression, generateHarmonyNotes, generateBassNotes } from './chords';
+import { generateDrumNotes } from './drums';
+import { generateMelodyNotes } from './melody';
+import { getAudioEngine } from './engine';
+import { v4 as uuidv4 } from 'uuid';
+
+// Generate a unique ID without external dependency
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Main generation function
+export async function generateTrack(params: GenerationParams): Promise<Track> {
+  const { bpm, genre, mood, duration, key, scale, complexity } = params;
+  
+  // Convert key to MIDI note number
+  const rootMidi = noteToMidi(key, 4);
+  
+  // Calculate number of bars based on BPM and duration
+  const beatsPerBar = 4;
+  const beatDuration = 60 / bpm;
+  const numBars = Math.ceil(duration / (beatsPerBar * beatDuration));
+  
+  // Generate chord progression
+  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  
+  // Extract chord roots for melody generation
+  const chordRoots = chords.map(c => c.chord[0]);
+  
+  // Generate all stems
+  const drumsNotes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+  const bassNotes = generateBassNotes(chords, beatsPerBar, bpm, genre);
+  const melodyNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
+  const harmonyNotes = generateHarmonyNotes(chords, beatsPerBar, bpm);
+  
+  // Create stem objects
+  const stems: Stem[] = [
+    { type: 'drums', notes: drumsNotes, volume: 0.8, muted: false, solo: false, color: STEM_COLORS.drums },
+    { type: 'bass', notes: bassNotes, volume: 0.75, muted: false, solo: false, color: STEM_COLORS.bass },
+    { type: 'melody', notes: melodyNotes, volume: 0.7, muted: false, solo: false, color: STEM_COLORS.melody },
+    { type: 'harmony', notes: harmonyNotes, volume: 0.6, muted: false, solo: false, color: STEM_COLORS.harmony },
+  ];
+  
+  // Render audio buffers for each stem
+  const engine = getAudioEngine();
+  const actualDuration = numBars * beatsPerBar * beatDuration;
+  
+  for (const stem of stems) {
+    try {
+      stem.audioBuffer = await engine.renderNotesToBufferAsync(
+        stem.notes,
+        actualDuration,
+        stem.type
+      );
+    } catch (error) {
+      console.error(`Failed to render ${stem.type} stem:`, error);
+    }
+  }
+  
+  return {
+    id: generateId(),
+    name: `Track - ${genre} ${bpm} BPM`,
+    params,
+    stems,
+    duration: actualDuration,
+    createdAt: new Date(),
+  };
+}
+
+// Regenerate a single stem
+export async function regenerateStem(
+  track: Track,
+  stemType: StemType
+): Promise<Stem> {
+  const { bpm, genre, mood, key, scale, complexity } = track.params;
+  const rootMidi = noteToMidi(key, 4);
+  const beatsPerBar = 4;
+  const beatDuration = 60 / bpm;
+  const numBars = Math.ceil(track.duration / (beatsPerBar * beatDuration));
+  
+  let notes: Note[] = [];
+  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  
+  switch (stemType) {
+    case 'drums':
+      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+      break;
+    case 'bass':
+      notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
+      break;
+    case 'melody':
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity);
+      break;
+    case 'harmony':
+      notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
+      break;
+  }
+  
+  const engine = getAudioEngine();
+  const audioBuffer = await engine.renderNotesToBufferAsync(notes, track.duration, stemType);
+  
+  const existingStem = track.stems.find(s => s.type === stemType);
+  
+  return {
+    type: stemType,
+    notes,
+    audioBuffer,
+    volume: existingStem?.volume ?? 0.7,
+    muted: existingStem?.muted ?? false,
+    solo: existingStem?.solo ?? false,
+    color: STEM_COLORS[stemType],
+  };
+}
+
+// Variation generator - creates a variation of existing stem
+export async function generateStemVariation(
+  stem: Stem,
+  params: GenerationParams
+): Promise<Stem> {
+  const { bpm, genre, mood, key, scale, complexity } = params;
+  const rootMidi = noteToMidi(key, 4);
+  const beatsPerBar = 4;
+  const beatDuration = 60 / bpm;
+  const numBars = Math.ceil(stem.notes.length > 0 
+    ? stem.notes[stem.notes.length - 1].startTime / (beatsPerBar * beatDuration) + 1
+    : 4);
+  
+  // Add some variation by adjusting complexity
+  const variedComplexity = Math.max(0, Math.min(1, complexity + (Math.random() - 0.5) * 0.3));
+  
+  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  let notes: Note[] = [];
+  
+  switch (stem.type) {
+    case 'drums':
+      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+      break;
+    case 'bass':
+      notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
+      break;
+    case 'melody':
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity);
+      break;
+    case 'harmony':
+      notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
+      break;
+  }
+  
+  const engine = getAudioEngine();
+  const duration = numBars * beatsPerBar * beatDuration;
+  const audioBuffer = await engine.renderNotesToBufferAsync(notes, duration, stem.type);
+  
+  return {
+    ...stem,
+    notes,
+    audioBuffer,
+  };
+}
+
+// Detect hardware capabilities
+export function detectHardwareCapabilities(): {
+  level: 'basic' | 'standard' | 'pro';
+  cores: number;
+  memory: number;
+  maxDuration: number;
+  recommendedComplexity: number;
+  hasWebAudio: boolean;
+} {
+  const cores = navigator.hardwareConcurrency || 4;
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory || 8;
+  const hasWebAudio = typeof AudioContext !== 'undefined' || typeof (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext !== 'undefined';
+  
+  let level: 'basic' | 'standard' | 'pro' = 'standard';
+  let maxDuration = 30;
+  let recommendedComplexity = 0.5;
+  
+  if (cores >= 8 && memory >= 16) {
+    level = 'pro';
+    maxDuration = 60;
+    recommendedComplexity = 0.8;
+  } else if (cores >= 4 && memory >= 8) {
+    level = 'standard';
+    maxDuration = 30;
+    recommendedComplexity = 0.5;
+  } else {
+    level = 'basic';
+    maxDuration = 15;
+    recommendedComplexity = 0.3;
+  }
+  
+  return {
+    level,
+    cores,
+    memory,
+    maxDuration,
+    recommendedComplexity,
+    hasWebAudio,
+  };
+}
+
+// Validate generation parameters
+export function validateParams(params: Partial<GenerationParams>): string[] {
+  const errors: string[] = [];
+  
+  if (params.bpm && (params.bpm < 60 || params.bpm > 180)) {
+    errors.push('BPM must be between 60 and 180');
+  }
+  
+  if (params.duration && (params.duration < 5 || params.duration > 60)) {
+    errors.push('Duration must be between 5 and 60 seconds');
+  }
+  
+  if (params.complexity && (params.complexity < 0 || params.complexity > 1)) {
+    errors.push('Complexity must be between 0 and 1');
+  }
+  
+  return errors;
+}
+
+```
+
+- src\lib\audio\melody.ts
+
+```
+// Melody generation with scale-based patterns
+
+import { SCALES } from '@/types/music';
+import type { Genre, Note, Mood } from '@/types/music';
+import { getScale } from './chords';
+
+// Melody rhythm patterns by genre
+const MELODY_RHYTHM_PATTERNS: Record<Genre, number[][]> = {
+  electronic: [
+    [0.5, 0.25, 0.25, 0.5, 0.25, 0.25, 0.5, 0.5],
+    [0.25, 0.25, 0.25, 0.25, 0.5, 0.25, 0.25, 0.5],
+    [0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.5, 0.5],
+  ],
+  hiphop: [
+    [0.25, 0.5, 0.25, 0.25, 0.5, 0.25, 0.25, 0.25],
+    [0.5, 0.25, 0.25, 0.5, 0.25, 0.5, 0.25, 0.5],
+    [0.25, 0.25, 0.5, 0.25, 0.25, 0.5, 0.5, 0.25],
+  ],
+  ambient: [
+    [2, 2, 2, 2],
+    [1, 2, 1, 2],
+    [1.5, 1.5, 1.5, 0.5],
+  ],
+  rock: [
+    [0.5, 0.5, 0.25, 0.25, 0.5, 0.5, 0.25, 0.25],
+    [0.25, 0.25, 0.5, 0.25, 0.25, 0.5, 0.25, 0.5],
+    [0.5, 0.25, 0.25, 0.5, 0.25, 0.25, 0.5, 0.5],
+  ],
+  jazz: [
+    [0.5, 0.25, 0.25, 0.25, 0.25, 0.5, 0.25, 0.75],
+    [0.25, 0.5, 0.25, 0.25, 0.25, 0.25, 0.5, 0.75],
+    [0.75, 0.25, 0.5, 0.25, 0.25, 0.5, 0.25, 0.5],
+  ],
+};
+
+// Melody contour shapes
+type ContourType = 'ascending' | 'descending' | 'arch' | 'valley' | 'wave';
+
+// Get melody direction bias based on mood
+function getMoodBias(mood: Mood): { contour: ContourType; jumpiness: number } {
+  switch (mood) {
+    case 'happy':
+      return { contour: 'ascending', jumpiness: 0.3 };
+    case 'sad':
+      return { contour: 'descending', jumpiness: 0.1 };
+    case 'energetic':
+      return { contour: 'wave', jumpiness: 0.5 };
+    case 'calm':
+      return { contour: 'arch', jumpiness: 0.15 };
+    case 'dark':
+      return { contour: 'valley', jumpiness: 0.2 };
+    case 'uplifting':
+      return { contour: 'ascending', jumpiness: 0.25 };
+    default:
+      return { contour: 'wave', jumpiness: 0.2 };
+  }
+}
+
+// Generate a melody note sequence
+export function generateMelodyNotes(
+  rootMidi: number,
+  scaleName: string,
+  genre: Genre,
+  mood: Mood,
+  bpm: number,
+  numBars: number,
+  complexity: number,
+  chordRoots: number[] = []
+): Note[] {
+  const notes: Note[] = [];
+  const scale = getScale(rootMidi, scaleName);
+  const beatDuration = 60 / bpm;
+  
+  // Extend scale across octaves for melody range
+  const extendedScale: number[] = [];
+  for (let octave = -1; octave <= 2; octave++) {
+    scale.forEach(note => extendedScale.push(note + octave * 12));
+  }
+  
+  // Get mood-based parameters
+  const { contour, jumpiness } = getMoodBias(mood);
+  
+  // Select rhythm pattern based on genre
+  const rhythmPatterns = MELODY_RHYTHM_PATTERNS[genre] || MELODY_RHYTHM_PATTERNS.electronic;
+  const selectedPattern = rhythmPatterns[Math.floor(Math.random() * rhythmPatterns.length)];
+  
+  let currentTime = 0;
+  let currentScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
+  let barCount = 0;
+  let noteIndex = 0;
+  
+  while (currentTime < numBars * 4 * beatDuration) {
+    const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
+    const patternIndex = noteIndex % selectedPattern.length;
+    const duration = selectedPattern[patternIndex] * beatDuration;
+    
+    // Determine if this note should play (complexity affects density)
+    const shouldPlay = Math.random() < (0.6 + complexity * 0.3);
+    
+    if (shouldPlay && duration > 0) {
+      // Apply contour bias to scale index movement
+      let direction = 0;
+      const contourProgress = currentTime / (numBars * 4 * beatDuration);
+      
+      switch (contour) {
+        case 'ascending':
+          direction = Math.random() < 0.6 ? 1 : -1;
+          break;
+        case 'descending':
+          direction = Math.random() < 0.6 ? -1 : 1;
+          break;
+        case 'arch':
+          direction = contourProgress < 0.5 ? 1 : -1;
+          break;
+        case 'valley':
+          direction = contourProgress < 0.5 ? -1 : 1;
+          break;
+        case 'wave':
+          direction = Math.sin(contourProgress * Math.PI * 4) > 0 ? 1 : -1;
+          break;
+      }
+      
+      // Add randomness based on jumpiness
+      if (Math.random() < jumpiness) {
+        direction *= Math.floor(Math.random() * 3) + 1; // Bigger jumps
+      }
+      
+      currentScaleIndex = Math.max(0, Math.min(extendedScale.length - 1, currentScaleIndex + direction));
+      
+      const pitch = extendedScale[currentScaleIndex];
+      
+      // Velocity varies based on position and randomness
+      const baseVelocity = genre === 'ambient' ? 60 : 80;
+      const velocity = Math.round(baseVelocity + Math.random() * 30);
+      
+      notes.push({
+        pitch,
+        velocity,
+        startTime: currentTime,
+        duration: duration * (0.8 + Math.random() * 0.15), // Slight variation
+      });
+    }
+    
+    currentTime += duration;
+    noteIndex++;
+  }
+  
+  return notes;
+}
+
+// Generate arpeggiated melody pattern
+export function generateArpeggioNotes(
+  rootMidi: number,
+  scaleName: string,
+  bpm: number,
+  numBars: number,
+  pattern: 'up' | 'down' | 'updown' | 'random' = 'up'
+): Note[] {
+  const notes: Note[] = [];
+  const scale = getScale(rootMidi, scaleName);
+  const beatDuration = 60 / bpm;
+  const noteLength = beatDuration / 2; // Eighth notes
+  
+  const totalNotes = numBars * 8; // 8 eighth notes per bar
+  
+  for (let i = 0; i < totalNotes; i++) {
+    let scaleIndex: number;
+    
+    switch (pattern) {
+      case 'up':
+        scaleIndex = i % scale.length;
+        break;
+      case 'down':
+        scaleIndex = (scale.length - 1) - (i % scale.length);
+        break;
+      case 'updown':
+        const upDownIndex = i % (scale.length * 2 - 2);
+        scaleIndex = upDownIndex < scale.length ? upDownIndex : (scale.length * 2 - 2) - upDownIndex;
+        break;
+      case 'random':
+        scaleIndex = Math.floor(Math.random() * scale.length);
+        break;
+    }
+    
+    const octaveOffset = Math.floor(i / scale.length) * 12;
+    
+    notes.push({
+      pitch: scale[scaleIndex] + octaveOffset,
+      velocity: 70 + Math.random() * 20,
+      startTime: i * noteLength,
+      duration: noteLength * 0.9,
+    });
+  }
+  
+  return notes;
+}
+
+// Generate a countermelody (secondary melody that complements main melody)
+export function generateCounterMelodyNotes(
+  mainMelody: Note[],
+  rootMidi: number,
+  scaleName: string,
+  bpm: number
+): Note[] {
+  const notes: Note[] = [];
+  const scale = getScale(rootMidi, scaleName);
+  
+  // Add notes between main melody notes (call and response style)
+  for (let i = 0; i < mainMelody.length - 1; i++) {
+    const currentNote = mainMelody[i];
+    const nextNote = mainMelody[i + 1];
+    const gap = nextNote.startTime - currentNote.startTime - currentNote.duration;
+    
+    if (gap > 0.1) {
+      // Find a harmonizing note
+      const mainPitch = currentNote.pitch % 12;
+      const harmonyOptions = scale.filter(s => {
+        const diff = Math.abs((s % 12) - mainPitch);
+        return diff === 3 || diff === 4 || diff === 7; // Thirds and fifths
+      });
+      
+      if (harmonyOptions.length > 0) {
+        const harmonyPitch = harmonyOptions[Math.floor(Math.random() * harmonyOptions.length)];
+        
+        notes.push({
+          pitch: harmonyPitch + 12, // Octave above for brightness
+          velocity: 50 + Math.random() * 20,
+          startTime: currentNote.startTime + currentNote.duration + gap * 0.3,
+          duration: gap * 0.4,
+        });
+      }
+    }
+  }
+  
+  return notes;
+}
+
+// Quantize notes to a grid
+export function quantizeNotes(notes: Note[], gridValue: number = 0.25): Note[] {
+  return notes.map(note => ({
+    ...note,
+    startTime: Math.round(note.startTime / gridValue) * gridValue,
+    duration: Math.round(note.duration / gridValue) * gridValue || gridValue,
+  }));
+}
+
+```
+- src\lib\audio\export.ts
+```
+// Export functionality for WAV and MIDI files
+
+import type { Note, Stem, Track, StemType } from '@/types/music';
+import { NOTE_NAMES } from '@/types/music';
+
+// WAV file export
+export function audioBufferToWav(buffer: AudioBuffer): Blob {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+  
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  
+  const samples = buffer.length;
+  const dataSize = samples * blockAlign;
+  const fileSize = 44 + dataSize;
+  
+  const arrayBuffer = new ArrayBuffer(fileSize);
+  const view = new DataView(arrayBuffer);
+  
+  // WAV header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, fileSize - 8, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // fmt chunk size
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+  
+  // Interleave channels and write samples
+  const channels: Float32Array[] = [];
+  for (let i = 0; i < numChannels; i++) {
+    channels.push(buffer.getChannelData(i));
+  }
+  
+  let offset = 44;
+  for (let i = 0; i < samples; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+      const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, intSample, true);
+      offset += 2;
+    }
+  }
+  
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
+// Export stem to WAV
+export function exportStemToWav(stem: Stem): Blob | null {
+  if (!stem.audioBuffer) return null;
+  return audioBufferToWav(stem.audioBuffer);
+}
+
+// Export all stems as mixed WAV
+export function exportTrackToWav(track: Track, stemVolumes: Record<StemType, number>): Blob | null {
+  // Create offline context for mixing
+  const sampleRate = 44100;
+  const numSamples = Math.ceil(track.duration * sampleRate);
+  const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
+  
+  // Mix stems
+  for (const stem of track.stems) {
+    if (!stem.audioBuffer || stem.muted) continue;
+    
+    const source = offlineContext.createBufferSource();
+    source.buffer = stem.audioBuffer;
+    
+    const gain = offlineContext.createGain();
+    gain.gain.value = stemVolumes[stem.type] ?? stem.volume;
+    
+    source.connect(gain);
+    gain.connect(offlineContext.destination);
+    source.start(0);
+  }
+  
+  // For now, return the first stem's buffer mixed
+  // In real implementation, we'd use async rendering
+  const firstStemWithBuffer = track.stems.find(s => s.audioBuffer);
+  if (!firstStemWithBuffer?.audioBuffer) return null;
+  
+  return audioBufferToWav(firstStemWithBuffer.audioBuffer);
+}
+
+// MIDI file export
+const MIDI_PPQ = 480; // Pulses per quarter note
+
+interface MidiEvent {
+  deltaTime: number;
+  status: number;
+  data: number[];
+}
+
+interface MidiTrack {
+  events: MidiEvent[];
+}
+
+function createMidiHeader(numTracks: number): Uint8Array {
+  const header = new Uint8Array(14);
+  const view = new DataView(header.buffer);
+  
+  // "MThd" chunk
+  writeMidiString(header, 0, 'MThd');
+  view.setUint32(4, 6, false); // Header length
+  view.setUint16(8, 1, false); // Format type 1 (multi-track)
+  view.setUint16(10, numTracks, false); // Number of tracks
+  view.setUint16(12, MIDI_PPQ, false); // PPQ
+  
+  return header;
+}
+
+function createMidiTrack(events: MidiEvent[]): Uint8Array {
+  const eventData: number[] = [];
+  
+  for (const event of events) {
+    // Write variable-length delta time
+    writeVariableLength(eventData, event.deltaTime);
+    
+    // Write status byte and data
+    eventData.push(event.status);
+    eventData.push(...event.data);
+  }
+  
+  // End of track event
+  eventData.push(0x00, 0xFF, 0x2F, 0x00);
+  
+  const track = new Uint8Array(8 + eventData.length);
+  const view = new DataView(track.buffer);
+  
+  writeMidiString(track, 0, 'MTrk');
+  view.setUint32(4, eventData.length, false);
+  track.set(eventData, 8);
+  
+  return track;
+}
+
+function writeMidiString(arr: Uint8Array, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    arr[offset + i] = str.charCodeAt(i);
+  }
+}
+
+function writeVariableLength(data: number[], value: number): void {
+  if (value === 0) {
+    data.push(0);
+    return;
+  }
+  
+  const bytes: number[] = [];
+  bytes.push(value & 0x7F);
+  value >>= 7;
+  
+  while (value > 0) {
+    bytes.push((value & 0x7F) | 0x80);
+    value >>= 7;
+  }
+  
+  // Write in reverse order
+  for (let i = bytes.length - 1; i >= 0; i--) {
+    data.push(bytes[i]);
+  }
+}
+
+function secondsToTicks(seconds: number, bpm: number): number {
+  const secondsPerBeat = 60 / bpm;
+  const secondsPerTick = secondsPerBeat / MIDI_PPQ;
+  return Math.round(seconds / secondsPerTick);
+}
+
+function notesToMidiEvents(notes: Note[], bpm: number, channel: number = 0): MidiEvent[] {
+  const events: MidiEvent[] = [];
+  const ticksPerSecond = (bpm / 60) * MIDI_PPQ;
+  
+  // Convert notes to note-on and note-off events
+  const timedEvents: { tick: number; status: number; velocity: number; pitch: number }[] = [];
+  
+  for (const note of notes) {
+    const startTick = Math.round(note.startTime * ticksPerSecond);
+    const endTick = Math.round((note.startTime + note.duration) * ticksPerSecond);
+    
+    // Note on
+    timedEvents.push({
+      tick: startTick,
+      status: 0x90 | channel,
+      velocity: Math.round(note.velocity),
+      pitch: note.pitch,
+    });
+    
+    // Note off
+    timedEvents.push({
+      tick: endTick,
+      status: 0x80 | channel,
+      velocity: 0,
+      pitch: note.pitch,
+    });
+  }
+  
+  // Sort by tick
+  timedEvents.sort((a, b) => a.tick - b.tick);
+  
+  // Convert to delta times
+  let lastTick = 0;
+  for (const event of timedEvents) {
+    const deltaTime = event.tick - lastTick;
+    events.push({
+      deltaTime,
+      status: event.status,
+      data: [event.pitch, event.velocity],
+    });
+    lastTick = event.tick;
+  }
+  
+  return events;
+}
+
+// Export stem to MIDI
+export function exportStemToMidi(stem: Stem, bpm: number): Blob {
+  const events = notesToMidiEvents(stem.notes, bpm);
+  
+  // Add program change based on stem type
+  const programChanges: Record<StemType, number> = {
+    drums: 0, // Standard drum kit (channel 10 in GM)
+    bass: 33, // Electric Bass (finger)
+    melody: 80, // Synth Lead
+    harmony: 88, // Synth Pad
+  };
+  
+  const channel = stem.type === 'drums' ? 9 : 0; // Channel 10 for drums
+  
+  // Create track with program change
+  const trackEvents: MidiEvent[] = [
+    { deltaTime: 0, status: 0xC0 | channel, data: [programChanges[stem.type]] },
+    ...events,
+  ];
+  
+  const header = createMidiHeader(1);
+  const track = createMidiTrack(trackEvents);
+  
+  const midiFile = new Uint8Array(header.length + track.length);
+  midiFile.set(header, 0);
+  midiFile.set(track, header.length);
+  
+  return new Blob([midiFile], { type: 'audio/midi' });
+}
+
+// Export full track to MIDI (multi-track)
+export function exportTrackToMidi(track: Track): Blob {
+  const { bpm } = track.params;
+  
+  // Create one track per stem
+  const tracks: Uint8Array[] = [];
+  const stemChannels: Record<StemType, number> = {
+    drums: 9,
+    bass: 0,
+    melody: 1,
+    harmony: 2,
+  };
+  
+  const programChanges: Record<StemType, number> = {
+    drums: 0,
+    bass: 33,
+    melody: 80,
+    harmony: 88,
+  };
+  
+  for (const stem of track.stems) {
+    const channel = stemChannels[stem.type];
+    const events: MidiEvent[] = [
+      // Tempo meta event (only on first track)
+      ...(stem.type === 'drums' ? [{
+        deltaTime: 0,
+        status: 0xFF,
+        data: [0x51, 0x03, ...microsecondsPerBeat(bpm)],
+      }] : []),
+      // Program change
+      { deltaTime: 0, status: 0xC0 | channel, data: [programChanges[stem.type]] },
+    ];
+    
+    // Convert notes
+    const noteEvents = notesToMidiEvents(stem.notes, bpm, channel);
+    events.push(...noteEvents);
+    
+    tracks.push(createMidiTrack(events));
+  }
+  
+  const header = createMidiHeader(tracks.length);
+  const totalLength = header.length + tracks.reduce((sum, t) => sum + t.length, 0);
+  
+  const midiFile = new Uint8Array(totalLength);
+  midiFile.set(header, 0);
+  
+  let offset = header.length;
+  for (const track of tracks) {
+    midiFile.set(track, offset);
+    offset += track.length;
+  }
+  
+  return new Blob([midiFile], { type: 'audio/midi' });
+}
+
+function microsecondsPerBeat(bpm: number): number[] {
+  const microseconds = Math.round(60000000 / bpm);
+  return [
+    (microseconds >> 16) & 0xFF,
+    (microseconds >> 8) & 0xFF,
+    microseconds & 0xFF,
+  ];
+}
+
+// Download helper
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Generate filename
+export function generateFilename(track: Track, extension: string): string {
+  const date = new Date().toISOString().split('T')[0];
+  const genre = track.params.genre;
+  const bpm = track.params.bpm;
+  return `loco-tunes-${genre}-${bpm}bpm-${date}.${extension}`;
+}
+```
+- src\lib\audio\engine.ts
+```
+// Web Audio API engine for Loco-Tunes
+
+import type { Note, Stem, StemType, EffectSettings, Track } from '@/types/music';
+import { midiToFrequency, getScale } from './chords';
+import { DRUM_MIDI, createDrumSynthSpec } from './drums';
+
+// Audio context singleton
+let audioContext: AudioContext | null = null;
+
+export function getAudioContext(): AudioContext {
+  if (!audioContext) {
+    audioContext = new AudioContext();
+  }
+  return audioContext;
+}
+
+// Master output with effects chain
+export class AudioEngine {
+  private context: AudioContext;
+  private masterGain: GainNode;
+  private compressor: DynamicsCompressorNode;
+  private reverbNode: ConvolverNode | null = null;
+  private eqLow: BiquadFilterNode;
+  private eqMid: BiquadFilterNode;
+  private eqHigh: BiquadFilterNode;
+  
+  private stemPlayers: Map<StemType, { source: AudioBufferSourceNode | null; gain: GainNode }> = new Map();
+  private isPlaying: boolean = false;
+  private startTime: number = 0;
+  private pausedAt: number = 0;
+  
+  constructor() {
+    this.context = getAudioContext();
+    
+    // Create master chain
+    this.masterGain = this.context.createGain();
+    this.masterGain.gain.value = 0.8;
+    
+    // EQ nodes
+    this.eqLow = this.context.createBiquadFilter();
+    this.eqLow.type = 'lowshelf';
+    this.eqLow.frequency.value = 320;
+    this.eqLow.gain.value = 0;
+    
+    this.eqMid = this.context.createBiquadFilter();
+    this.eqMid.type = 'peaking';
+    this.eqMid.frequency.value = 1000;
+    this.eqMid.Q.value = 0.5;
+    this.eqMid.gain.value = 0;
+    
+    this.eqHigh = this.context.createBiquadFilter();
+    this.eqHigh.type = 'highshelf';
+    this.eqHigh.frequency.value = 3200;
+    this.eqHigh.gain.value = 0;
+    
+    // Compressor
+    this.compressor = this.context.createDynamicsCompressor();
+    this.compressor.threshold.value = -24;
+    this.compressor.knee.value = 30;
+    this.compressor.ratio.value = 4;
+    this.compressor.attack.value = 0.003;
+    this.compressor.release.value = 0.25;
+    
+    // Connect chain: source -> eq -> compressor -> master -> destination
+    this.eqLow.connect(this.eqMid);
+    this.eqMid.connect(this.eqHigh);
+    this.eqHigh.connect(this.compressor);
+    this.compressor.connect(this.masterGain);
+    this.masterGain.connect(this.context.destination);
+    
+    // Create reverb (async)
+    this.createReverb();
+  }
+  
+  private async createReverb(): Promise<void> {
+    const sampleRate = this.context.sampleRate;
+    const length = sampleRate * 2; // 2 second reverb
+    const impulse = this.context.createBuffer(2, length, sampleRate);
+    
+    for (let channel = 0; channel < 2; channel++) {
+      const channelData = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        // Exponential decay
+        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+      }
+    }
+    
+    this.reverbNode = this.context.createConvolver();
+    this.reverbNode.buffer = impulse;
+  }
+  
+  // Synthesize a note using oscillators
+  synthesizeNote(
+    note: Note,
+    startTime: number,
+    duration: number,
+    options: {
+      oscillatorType?: OscillatorType;
+      attack?: number;
+      decay?: number;
+      sustain?: number;
+      release?: number;
+    } = {}
+  ): { oscillator: OscillatorNode; gainNode: GainNode } {
+    const {
+      oscillatorType = 'sine',
+      attack = 0.01,
+      decay = 0.1,
+      sustain = 0.7,
+      release = 0.3,
+    } = options;
+    
+    const osc = this.context.createOscillator();
+    osc.type = oscillatorType;
+    osc.frequency.value = midiToFrequency(note.pitch);
+    
+    const gainNode = this.context.createGain();
+    gainNode.gain.value = 0;
+    
+    // ADSR envelope
+    const velocity = note.velocity / 127;
+    const noteDuration = note.duration || duration;
+    
+    gainNode.gain.setValueAtTime(0, startTime);
+    gainNode.gain.linearRampToValueAtTime(velocity * 0.5, startTime + attack);
+    gainNode.gain.linearRampToValueAtTime(velocity * sustain * 0.5, startTime + attack + decay);
+    gainNode.gain.setValueAtTime(velocity * sustain * 0.5, startTime + noteDuration - release);
+    gainNode.gain.linearRampToValueAtTime(0, startTime + noteDuration);
+    
+    osc.connect(gainNode);
+    
+    return { oscillator: osc, gainNode };
+  }
+  
+  // Synthesize drum hit
+  synthesizeDrum(
+    drumType: keyof typeof DRUM_MIDI,
+    startTime: number,
+    velocity: number
+  ): { nodes: AudioNode[] } {
+    const spec = createDrumSynthSpec(drumType);
+    const nodes: AudioNode[] = [];
+    
+    const gainNode = this.context.createGain();
+    gainNode.gain.value = 0;
+    gainNode.gain.linearRampToValueAtTime(velocity / 127 * 0.6, startTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + spec.decay);
+    nodes.push(gainNode);
+    
+    if (spec.type === 'noise') {
+      // Create noise buffer
+      const bufferSize = this.context.sampleRate * spec.decay;
+      const noiseBuffer = this.context.createBuffer(1, bufferSize, this.context.sampleRate);
+      const noiseData = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        noiseData[i] = Math.random() * 2 - 1;
+      }
+      
+      const noiseSource = this.context.createBufferSource();
+      noiseSource.buffer = noiseBuffer;
+      noiseSource.start(startTime);
+      nodes.push(noiseSource);
+      
+      let lastNode: AudioNode = noiseSource;
+      
+      if (spec.filter) {
+        const filter = this.context.createBiquadFilter();
+        filter.type = spec.filter.type;
+        filter.frequency.value = spec.filter.frequency;
+        if (spec.filter.Q) filter.Q.value = spec.filter.Q;
+        lastNode.connect(filter);
+        lastNode = filter;
+        nodes.push(filter);
+      }
+      
+      lastNode.connect(gainNode);
+    } else {
+      // Oscillator-based (kick, toms)
+      const osc = this.context.createOscillator();
+      osc.frequency.value = spec.frequency || 150;
+      osc.frequency.setValueAtTime(spec.frequency || 150, startTime);
+      
+      if (spec.pitchDecay) {
+        osc.frequency.exponentialRampToValueAtTime(
+          20,
+          startTime + spec.pitchDecay
+        );
+      }
+      
+      osc.type = 'sine';
+      osc.start(startTime);
+      osc.stop(startTime + spec.decay);
+      
+      let lastNode: AudioNode = osc;
+      
+      if (spec.filter) {
+        const filter = this.context.createBiquadFilter();
+        filter.type = spec.filter.type;
+        filter.frequency.value = spec.filter.frequency;
+        lastNode.connect(filter);
+        lastNode = filter;
+        nodes.push(filter);
+      }
+      
+      lastNode.connect(gainNode);
+      nodes.push(osc);
+    }
+    
+    return { nodes };
+  }
+  
+  // Render notes to an AudioBuffer
+  renderNotesToBuffer(
+    notes: Note[],
+    duration: number,
+    stemType: StemType
+  ): AudioBuffer {
+    const sampleRate = this.context.sampleRate;
+    const numSamples = Math.ceil(duration * sampleRate);
+    const buffer = this.context.createBuffer(2, numSamples, sampleRate);
+    
+    const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
+    
+    // Render each note
+    for (const note of notes) {
+      if (stemType === 'drums') {
+        // Render drum
+        const drumType = Object.entries(DRUM_MIDI).find(
+          ([, midi]) => midi === note.pitch
+        )?.[0] as keyof typeof DRUM_MIDI;
+        
+        if (drumType) {
+          const spec = createDrumSynthSpec(drumType);
+          const startSample = Math.floor(note.startTime * sampleRate);
+          
+          if (spec.type === 'noise') {
+            // Generate noise
+            const noiseBuffer = offlineContext.createBuffer(1, 
+              Math.ceil(spec.decay * sampleRate), sampleRate);
+            const noiseData = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < noiseData.length; i++) {
+              noiseData[i] = Math.random() * 2 - 1;
+            }
+            
+            const source = offlineContext.createBufferSource();
+            source.buffer = noiseBuffer;
+            source.start(startSample / sampleRate);
+            
+            let lastNode: AudioNode = source;
+            
+            if (spec.filter) {
+              const filter = offlineContext.createBiquadFilter();
+              filter.type = spec.filter.type;
+              filter.frequency.value = spec.filter.frequency;
+              if (spec.filter.Q) filter.Q.value = spec.filter.Q;
+              lastNode.connect(filter);
+              lastNode = filter;
+            }
+            
+            const gain = offlineContext.createGain();
+            gain.gain.value = note.velocity / 127 * 0.5;
+            lastNode.connect(gain);
+            gain.connect(offlineContext.destination);
+          } else {
+            // Oscillator-based drum
+            const osc = offlineContext.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = spec.frequency || 150;
+            
+            if (spec.pitchDecay) {
+              osc.frequency.setValueAtTime(spec.frequency || 150, startSample / sampleRate);
+              osc.frequency.exponentialRampToValueAtTime(20, startSample / sampleRate + spec.pitchDecay);
+            }
+            
+            osc.start(startSample / sampleRate);
+            osc.stop(startSample / sampleRate + spec.decay);
+            
+            const gain = offlineContext.createGain();
+            gain.gain.setValueAtTime(note.velocity / 127 * 0.5, startSample / sampleRate);
+            gain.gain.exponentialRampToValueAtTime(0.001, startSample / sampleRate + spec.decay);
+            
+            osc.connect(gain);
+            gain.connect(offlineContext.destination);
+          }
+        }
+      } else {
+        // Render melodic note
+        const osc = offlineContext.createOscillator();
+        
+        // Different oscillator types per stem
+        switch (stemType) {
+          case 'bass':
+            osc.type = 'sawtooth';
+            break;
+          case 'melody':
+            osc.type = 'square';
+            break;
+          case 'harmony':
+            osc.type = 'triangle';
+            break;
+          default:
+            osc.type = 'sine';
+        }
+        
+        osc.frequency.value = midiToFrequency(note.pitch);
+        
+        const gain = offlineContext.createGain();
+        const attack = 0.02;
+        const release = 0.1;
+        
+        gain.gain.setValueAtTime(0, note.startTime);
+        gain.gain.linearRampToValueAtTime(
+          note.velocity / 127 * 0.3,
+          note.startTime + attack
+        );
+        gain.gain.setValueAtTime(
+          note.velocity / 127 * 0.25,
+          note.startTime + note.duration - release
+        );
+        gain.gain.linearRampToValueAtTime(0, note.startTime + note.duration);
+        
+        osc.start(note.startTime);
+        osc.stop(note.startTime + note.duration + 0.1);
+        
+        osc.connect(gain);
+        gain.connect(offlineContext.destination);
+      }
+    }
+    
+    // Render synchronously (OfflineAudioContext doesn't support async in this context)
+    // We'll use a Promise-based approach
+    return buffer;
+  }
+  
+  // Render notes asynchronously
+  async renderNotesToBufferAsync(
+    notes: Note[],
+    duration: number,
+    stemType: StemType
+  ): Promise<AudioBuffer> {
+    const sampleRate = this.context.sampleRate;
+    const numSamples = Math.ceil(duration * sampleRate);
+    const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
+    
+    // Render each note
+    for (const note of notes) {
+      if (stemType === 'drums') {
+        const drumType = Object.entries(DRUM_MIDI).find(
+          ([, midi]) => midi === note.pitch
+        )?.[0] as keyof typeof DRUM_MIDI;
+        
+        if (drumType) {
+          const spec = createDrumSynthSpec(drumType);
+          
+          if (spec.type === 'noise') {
+            const noiseBuffer = offlineContext.createBuffer(
+              1,
+              Math.ceil(spec.decay * sampleRate),
+              sampleRate
+            );
+            const noiseData = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < noiseData.length; i++) {
+              noiseData[i] = Math.random() * 2 - 1;
+            }
+            
+            const source = offlineContext.createBufferSource();
+            source.buffer = noiseBuffer;
+            source.start(note.startTime);
+            
+            let lastNode: AudioNode = source;
+            
+            if (spec.filter) {
+              const filter = offlineContext.createBiquadFilter();
+              filter.type = spec.filter.type;
+              filter.frequency.value = spec.filter.frequency;
+              if (spec.filter.Q) filter.Q.value = spec.filter.Q;
+              lastNode.connect(filter);
+              lastNode = filter;
+            }
+            
+            const gain = offlineContext.createGain();
+            gain.gain.value = note.velocity / 127 * 0.4;
+            lastNode.connect(gain);
+            gain.connect(offlineContext.destination);
+          } else {
+            const osc = offlineContext.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = spec.frequency || 150;
+            
+            if (spec.pitchDecay) {
+              osc.frequency.setValueAtTime(spec.frequency || 150, note.startTime);
+              osc.frequency.exponentialRampToValueAtTime(
+                20,
+                note.startTime + spec.pitchDecay
+              );
+            }
+            
+            osc.start(note.startTime);
+            osc.stop(note.startTime + spec.decay);
+            
+            const gain = offlineContext.createGain();
+            gain.gain.setValueAtTime(note.velocity / 127 * 0.5, note.startTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, note.startTime + spec.decay);
+            
+            osc.connect(gain);
+            gain.connect(offlineContext.destination);
+          }
+        }
+      } else {
+        const osc = offlineContext.createOscillator();
+        
+        switch (stemType) {
+          case 'bass':
+            osc.type = 'sawtooth';
+            break;
+          case 'melody':
+            osc.type = 'square';
+            break;
+          case 'harmony':
+            osc.type = 'triangle';
+            break;
+          default:
+            osc.type = 'sine';
+        }
+        
+        osc.frequency.value = midiToFrequency(note.pitch);
+        
+        const gain = offlineContext.createGain();
+        const attack = stemType === 'harmony' ? 0.1 : 0.02;
+        const release = stemType === 'harmony' ? 0.2 : 0.1;
+        
+        gain.gain.setValueAtTime(0, note.startTime);
+        gain.gain.linearRampToValueAtTime(
+          note.velocity / 127 * 0.3,
+          note.startTime + attack
+        );
+        gain.gain.setValueAtTime(
+          note.velocity / 127 * 0.25,
+          note.startTime + note.duration - release
+        );
+        gain.gain.linearRampToValueAtTime(0, note.startTime + note.duration);
+        
+        osc.start(note.startTime);
+        osc.stop(note.startTime + note.duration + 0.1);
+        
+        osc.connect(gain);
+        gain.connect(offlineContext.destination);
+      }
+    }
+    
+    return offlineContext.startRendering();
+  }
+  
+  // Update effects
+  setEffects(effects: EffectSettings): void {
+    // Reverb
+    if (this.reverbNode && effects.reverb.enabled) {
+      // Apply reverb via wet/dry mix would require more complex routing
+    }
+    
+    // EQ
+    if (effects.eq.enabled) {
+      this.eqLow.gain.value = effects.eq.low;
+      this.eqMid.gain.value = effects.eq.mid;
+      this.eqHigh.gain.value = effects.eq.high;
+    } else {
+      this.eqLow.gain.value = 0;
+      this.eqMid.gain.value = 0;
+      this.eqHigh.gain.value = 0;
+    }
+    
+    // Compressor
+    if (effects.compressor.enabled) {
+      this.compressor.threshold.value = effects.compressor.threshold;
+      this.compressor.ratio.value = effects.compressor.ratio;
+      this.compressor.attack.value = effects.compressor.attack;
+      this.compressor.release.value = effects.compressor.release;
+    }
+  }
+  
+  // Get master gain node for connecting sources
+  getMasterInput(): AudioNode {
+    return this.eqLow;
+  }
+  
+  // Get current time
+  getCurrentTime(): number {
+    if (this.isPlaying) {
+      return this.context.currentTime - this.startTime + this.pausedAt;
+    }
+    return this.pausedAt;
+  }
+  
+  // Cleanup
+  dispose(): void {
+    this.stopAll();
+    if (audioContext) {
+      audioContext.close();
+      audioContext = null;
+    }
+  }
+  
+  stopAll(): void {
+    this.stemPlayers.forEach(({ source }) => {
+      if (source) {
+        try {
+          source.stop();
+        } catch (e) {
+          // Ignore errors from already stopped sources
+        }
+      }
+    });
+    this.stemPlayers.clear();
+    this.isPlaying = false;
+  }
+}
+
+// Global audio engine instance
+let engineInstance: AudioEngine | null = null;
+
+export function getAudioEngine(): AudioEngine {
+  if (!engineInstance) {
+    engineInstance = new AudioEngine();
+  }
+  return engineInstance;
+}
+```
+- src\stores\musicStore.ts
+```
+// Zustand store for Loco-Tunes state management
+
+import { create } from 'zustand';
+import type { 
+  GenerationParams, 
+  Track, 
+  StemType, 
+  EffectSettings, 
+  HardwareTier,
+  Stem,
+} from '@/types/music';
+import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
+import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
+import { getAudioEngine } from '@/lib/audio/engine';
+import { exportTrackToMidi, downloadBlob, generateFilename, exportStemToWav, audioBufferToWav } from '@/lib/audio/export';
+
+interface MusicStore {
+  // Generation params
+  params: GenerationParams;
+  
+  // Current track
+  currentTrack: Track | null;
+  
+  // Playback state
+  isPlaying: boolean;
+  currentTime: number;
+  
+  // Effects
+  effects: EffectSettings;
+  
+  // Hardware
+  hardwareTier: HardwareTier;
+  
+  // UI state
+  mode: 'simple' | 'advanced';
+  isGenerating: boolean;
+  generationProgress: number;
+  
+  // Audio sources
+  activeSources: Map<StemType, AudioBufferSourceNode>;
+  
+  // Actions
+  setParams: (params: Partial<GenerationParams>) => void;
+  generateTrack: () => Promise<void>;
+  regenerateStem: (stemType: StemType) => Promise<void>;
+  playTrack: () => void;
+  pauseTrack: () => void;
+  stopTrack: () => void;
+  setStemVolume: (stemType: StemType, volume: number) => void;
+  toggleStemMute: (stemType: StemType) => void;
+  toggleStemSolo: (stemType: StemType) => void;
+  setEffects: (effects: Partial<EffectSettings>) => void;
+  exportWav: () => void;
+  exportMidi: () => void;
+  setMode: (mode: 'simple' | 'advanced') => void;
+  updateCurrentTime: (time: number) => void;
+}
+
+export const useMusicStore = create<MusicStore>((set, get) => ({
+  // Initial state
+  params: DEFAULT_PARAMS,
+  currentTrack: null,
+  isPlaying: false,
+  currentTime: 0,
+  effects: DEFAULT_EFFECTS,
+  hardwareTier: detectHardwareCapabilities(),
+  mode: 'simple',
+  isGenerating: false,
+  generationProgress: 0,
+  activeSources: new Map(),
+  
+  // Set generation params
+  setParams: (newParams) => set((state) => ({
+    params: { ...state.params, ...newParams },
+  })),
+  
+  // Generate a new track
+  generateTrack: async () => {
+    const { params, hardwareTier } = get();
+    
+    // Limit duration based on hardware tier
+    const limitedParams = {
+      ...params,
+      duration: Math.min(params.duration, hardwareTier.maxDuration),
+      complexity: Math.min(params.complexity, hardwareTier.recommendedComplexity),
+    };
+    
+    set({ isGenerating: true, generationProgress: 0 });
+    
+    try {
+      set({ generationProgress: 20 });
+      
+      const track = await generateTrack(limitedParams);
+      
+      set({ 
+        currentTrack: track, 
+        isGenerating: false, 
+        generationProgress: 100,
+        currentTime: 0,
+      });
+      
+      // Auto-play after generation
+      setTimeout(() => get().playTrack(), 100);
+      
+    } catch (error) {
+      console.error('Generation failed:', error);
+      set({ isGenerating: false, generationProgress: 0 });
+    }
+  },
+  
+  // Regenerate a single stem
+  regenerateStem: async (stemType: StemType) => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+    
+    set({ isGenerating: true });
+    
+    try {
+      const newStem = await regenerateStem(currentTrack, stemType);
+      
+      set((state) => ({
+        currentTrack: state.currentTrack ? {
+          ...state.currentTrack,
+          stems: state.currentTrack.stems.map(s => 
+            s.type === stemType ? newStem : s
+          ),
+        } : null,
+        isGenerating: false,
+      }));
+    } catch (error) {
+      console.error('Stem regeneration failed:', error);
+      set({ isGenerating: false });
+    }
+  },
+  
+  // Play the track
+  playTrack: () => {
+    const { currentTrack, isPlaying, activeSources } = get();
+    if (!currentTrack || isPlaying) return;
+    
+    const engine = getAudioEngine();
+    const context = engine['context'];
+    
+    // Check if context is suspended (browser autoplay policy)
+    if (context.state === 'suspended') {
+      context.resume();
+    }
+    
+    // Stop any existing sources
+    activeSources.forEach((source) => {
+      try {
+        source.stop();
+      } catch (e) {
+        // Ignore
+      }
+    });
+    
+    const newSources = new Map<StemType, AudioBufferSourceNode>();
+    
+    // Check if any stem is soloed
+    const hasSolo = currentTrack.stems.some(s => s.solo);
+    
+    // Play each stem
+    for (const stem of currentTrack.stems) {
+      if (!stem.audioBuffer) continue;
+      if (stem.muted) continue;
+      if (hasSolo && !stem.solo) continue;
+      
+      const source = context.createBufferSource();
+      source.buffer = stem.audioBuffer;
+      
+      const gainNode = context.createGain();
+      gainNode.gain.value = stem.volume;
+      
+      source.connect(gainNode);
+      gainNode.connect(engine.getMasterInput());
+      
+      source.start(0, get().currentTime);
+      newSources.set(stem.type, source);
+    }
+    
+    set({ isPlaying: true, activeSources: newSources });
+    
+    // Update time during playback
+    const startTime = context.currentTime - get().currentTime;
+    const updateTime = () => {
+      const { isPlaying, currentTrack } = get();
+      if (!isPlaying || !currentTrack) return;
+      
+      const elapsed = context.currentTime - startTime;
+      
+      if (elapsed >= currentTrack.duration) {
+        get().stopTrack();
+        return;
+      }
+      
+      set({ currentTime: elapsed });
+      requestAnimationFrame(updateTime);
+    };
+    
+    requestAnimationFrame(updateTime);
+  },
+  
+  // Pause the track
+  pauseTrack: () => {
+    const { activeSources, isPlaying } = get();
+    if (!isPlaying) return;
+    
+    // Stop all sources
+    activeSources.forEach((source) => {
+      try {
+        source.stop();
+      } catch (e) {
+        // Ignore
+      }
+    });
+    
+    set({ isPlaying: false, activeSources: new Map() });
+  },
+  
+  // Stop the track
+  stopTrack: () => {
+    const { activeSources } = get();
+    
+    // Stop all sources
+    activeSources.forEach((source) => {
+      try {
+        source.stop();
+      } catch (e) {
+        // Ignore
+      }
+    });
+    
+    set({ isPlaying: false, currentTime: 0, activeSources: new Map() });
+  },
+  
+  // Set stem volume
+  setStemVolume: (stemType: StemType, volume: number) => {
+    set((state) => ({
+      currentTrack: state.currentTrack ? {
+        ...state.currentTrack,
+        stems: state.currentTrack.stems.map(s => 
+          s.type === stemType ? { ...s, volume } : s
+        ),
+      } : null,
+    }));
+  },
+  
+  // Toggle stem mute
+  toggleStemMute: (stemType: StemType) => {
+    set((state) => ({
+      currentTrack: state.currentTrack ? {
+        ...state.currentTrack,
+        stems: state.currentTrack.stems.map(s => 
+          s.type === stemType ? { ...s, muted: !s.muted } : s
+        ),
+      } : null,
+    }));
+  },
+  
+  // Toggle stem solo
+  toggleStemSolo: (stemType: StemType) => {
+    set((state) => ({
+      currentTrack: state.currentTrack ? {
+        ...state.currentTrack,
+        stems: state.currentTrack.stems.map(s => 
+          s.type === stemType ? { ...s, solo: !s.solo } : s
+        ),
+      } : null,
+    }));
+  },
+  
+  // Set effects
+  setEffects: (newEffects: Partial<EffectSettings>) => {
+    set((state) => ({
+      effects: { ...state.effects, ...newEffects },
+    }));
+    
+    // Apply to audio engine
+    const engine = getAudioEngine();
+    engine.setEffects(get().effects);
+  },
+  
+  // Export to WAV
+  exportWav: () => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+    
+    // For now, export mixed stems
+    // In full implementation, we'd render all stems to a single buffer
+    const stemWithBuffer = currentTrack.stems.find(s => s.audioBuffer);
+    if (!stemWithBuffer?.audioBuffer) return;
+    
+    const blob = audioBufferToWav(stemWithBuffer.audioBuffer);
+    const filename = generateFilename(currentTrack, 'wav');
+    downloadBlob(blob, filename);
+  },
+  
+  // Export to MIDI
+  exportMidi: () => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+    
+    const blob = exportTrackToMidi(currentTrack);
+    const filename = generateFilename(currentTrack, 'mid');
+    downloadBlob(blob, filename);
+  },
+  
+  // Set UI mode
+  setMode: (mode: 'simple' | 'advanced') => set({ mode }),
+  
+  // Update current time
+  updateCurrentTime: (time: number) => set({ currentTime: time }),
+}));
+```
+- src\types\music.ts
+```
+// Music generation types for Loco-Tunes
+
+export type Genre = 'electronic' | 'hiphop' | 'ambient' | 'rock' | 'jazz';
+
+export type Mood = 'happy' | 'sad' | 'energetic' | 'calm' | 'dark' | 'uplifting';
+
+export type StemType = 'drums' | 'bass' | 'melody' | 'harmony';
+
+export interface GenerationParams {
+  prompt: string;
+  bpm: number;
+  genre: Genre;
+  mood: Mood;
+  duration: number; // in seconds
+  key: string;
+  scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
+  complexity: number; // 0-1
+}
+
+export interface Note {
+  pitch: number; // MIDI note number
+  velocity: number; // 0-127
+  startTime: number; // in seconds
+  duration: number; // in seconds
+}
+
+export interface Stem {
+  type: StemType;
+  notes: Note[];
+  audioBuffer?: AudioBuffer;
+  volume: number; // 0-1
+  muted: boolean;
+  solo: boolean;
+  color: string;
+}
+
+export interface Track {
+  id: string;
+  name: string;
+  params: GenerationParams;
+  stems: Stem[];
+  duration: number;
+  createdAt: Date;
+}
+
+export interface EffectSettings {
+  reverb: {
+    enabled: boolean;
+    mix: number; // 0-1
+    decay: number; // in seconds
+  };
+  eq: {
+    enabled: boolean;
+    low: number; // -12 to +12 dB
+    mid: number;
+    high: number;
+  };
+  compressor: {
+    enabled: boolean;
+    threshold: number; // -60 to 0 dB
+    ratio: number; // 1-20
+    attack: number; // in seconds
+    release: number; // in seconds
+  };
+}
+
+export interface HardwareTier {
+  level: 'basic' | 'standard' | 'pro';
+  cores: number;
+  memory: number;
+  hasWebAudio: boolean;
+  maxDuration: number;
+  recommendedComplexity: number;
+}
+
+export interface MusicState {
+  // Generation params
+  params: GenerationParams;
+  
+  // Current track
+  currentTrack: Track | null;
+  
+  // Playback state
+  isPlaying: boolean;
+  currentTime: number;
+  
+  // Effects
+  effects: EffectSettings;
+  
+  // Hardware
+  hardwareTier: HardwareTier;
+  
+  // UI state
+  mode: 'simple' | 'advanced';
+  isGenerating: boolean;
+  
+  // Actions
+  setParams: (params: Partial<GenerationParams>) => void;
+  generateTrack: () => Promise<void>;
+  playTrack: () => void;
+  pauseTrack: () => void;
+  stopTrack: () => void;
+  setStemVolume: (stemType: StemType, volume: number) => void;
+  toggleStemMute: (stemType: StemType) => void;
+  toggleStemSolo: (stemType: StemType) => void;
+  setEffects: (effects: Partial<EffectSettings>) => void;
+  exportWav: () => void;
+  exportMidi: () => void;
+  setMode: (mode: 'simple' | 'advanced') => void;
+}
+
+// Scale definitions (semitone intervals from root)
+export const SCALES: Record<string, number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+  pentatonic: [0, 2, 4, 7, 9],
+  blues: [0, 3, 5, 6, 7, 10],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+};
+
+// Chord progressions by genre
+export const CHORD_PROGRESSIONS: Record<Genre, number[][]> = {
+  electronic: [[0, 0], [3, 0], [4, 0], [4, 5]], // I - IV - V - V/V
+  hiphop: [[0, 0], [2, -1], [3, 0], [5, 0]], // i - III - IV - VI
+  ambient: [[0, 0], [0, 0], [2, 0], [3, 0]], // Sustained patterns
+  rock: [[0, 0], [4, 0], [5, 0], [4, 0]], // I - V - VI - V
+  jazz: [[0, 0], [3, 1], [4, 0], [2, 0]], // ii-V-I variations
+};
+
+// Note names for MIDI conversion
+export const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+// Default values
+export const DEFAULT_PARAMS: GenerationParams = {
+  prompt: '',
+  bpm: 120,
+  genre: 'electronic',
+  mood: 'energetic',
+  duration: 30,
+  key: 'C',
+  scale: 'minor',
+  complexity: 0.5,
+};
+
+export const DEFAULT_EFFECTS: EffectSettings = {
+  reverb: {
+    enabled: true,
+    mix: 0.3,
+    decay: 2.0,
+  },
+  eq: {
+    enabled: true,
+    low: 0,
+    mid: 0,
+    high: 0,
+  },
+  compressor: {
+    enabled: true,
+    threshold: -24,
+    ratio: 4,
+    attack: 0.003,
+    release: 0.25,
+  },
+};
+
+// Stem colors for UI
+export const STEM_COLORS: Record<StemType, string> = {
+  drums: '#ef4444',   // red
+  bass: '#3b82f6',    // blue
+  melody: '#22c55e',  // green
+  harmony: '#a855f7', // purple
+};
+```
