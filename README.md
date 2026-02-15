@@ -264,7 +264,6 @@ For security concerns, please see our [Security Policy](SECURITY.md).
 
 - **Issues**: [GitHub Issues](https://github.com/socialawy/loco-tunes/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/socialawy/loco-tunes/discussions)
-- **Security**: security@loco-tunes.com
 
 ## 🙏 Acknowledgments
 
@@ -273,11 +272,7 @@ For security concerns, please see our [Security Policy](SECURITY.md).
 - Next.js team for the excellent framework
 - All contributors and beta testers
 
-## 🌟 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=socialawy/loco-tunes&type=Date)](https://star-history.com/#socialawy/loco-tunes&Date)
-
 ---
 
-**Made with ❤️ and 🎵 by [Socialawy](https://github.com/socialawy)**
+**Made with ❤️ for 🎵 and content creators, by [Socialawy](https://github.com/socialawy)**
 
