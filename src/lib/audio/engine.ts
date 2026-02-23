@@ -1,14 +1,14 @@
 // Web Audio API engine for Loco-Tunes
 
-import type { Note, Stem, StemType, EffectSettings, Track } from '@/types/music';
-import { midiToFrequency, getScale } from './chords';
+import type { Note, Stem, StemType, EffectSettings, Track, SynthParams } from '@/types/music';
+import { midiToFrequency } from './chords';
 import { DRUM_MIDI, createDrumSynthSpec } from './drums';
 
 // Audio context singleton
 let audioContext: AudioContext | null = null;
 
 export function getAudioContext(): AudioContext {
-  if (!audioContext) {
+  if (!audioContext || audioContext.state === 'closed') {
     audioContext = new AudioContext();
   }
   return audioContext;
@@ -27,7 +27,7 @@ export class AudioEngine {
   private eqHigh: BiquadFilterNode;
   
   private stemPlayers: Map<StemType, { source: AudioBufferSourceNode | null; gain: GainNode }> = new Map();
-  private isPlaying: boolean = false;
+  public isPlaying: boolean = false;
   private startTime: number = 0;
   private pausedAt: number = 0;
   
@@ -69,297 +69,213 @@ export class AudioEngine {
     this.dryGain = this._context.createGain();
     this.dryGain.gain.value = 0.7;
     
-    // Connect chain: source -> eq -> compressor -> master -> destination
+    // Connect chain
     this.eqLow.connect(this.eqMid);
     this.eqMid.connect(this.eqHigh);
     this.eqHigh.connect(this.compressor);
+
     this.compressor.connect(this.dryGain);
     this.compressor.connect(this.reverbGain);
+
     this.dryGain.connect(this.masterGain);
-    this.reverbGain.connect(this.masterGain);
+
     this.masterGain.connect(this._context.destination);
     
-    // Create reverb (async)
     this.createReverb();
   }
   
-  // Public getter for context
   get context(): AudioContext {
     return this._context;
   }
   
   private async createReverb(): Promise<void> {
     const sampleRate = this._context.sampleRate;
-    const length = sampleRate * 2; // 2 second reverb
+    const length = sampleRate * 2;
     const impulse = this._context.createBuffer(2, length, sampleRate);
     
     for (let channel = 0; channel < 2; channel++) {
       const channelData = impulse.getChannelData(channel);
       for (let i = 0; i < length; i++) {
-        // Exponential decay
         channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
       }
     }
     
     this.reverbNode = this._context.createConvolver();
     this.reverbNode.buffer = impulse;
-    this.reverbNode.connect(this.reverbGain);
+    
+    this.reverbGain.connect(this.reverbNode);
+    this.reverbNode.connect(this.masterGain);
   }
-  
-  // Synthesize a note using oscillators
-  synthesizeNote(
-    note: Note,
-    startTime: number,
-    duration: number,
-    options: {
-      oscillatorType?: OscillatorType;
-      attack?: number;
-      decay?: number;
-      sustain?: number;
-      release?: number;
-    } = {}
-  ): { oscillator: OscillatorNode; gainNode: GainNode } {
-    const {
-      oscillatorType = 'sine',
-      attack = 0.01,
-      decay = 0.1,
-      sustain = 0.7,
-      release = 0.3,
-    } = options;
-    
-    const osc = this._context.createOscillator();
-    osc.type = oscillatorType;
-    osc.frequency.value = midiToFrequency(note.pitch);
-    
-    const gainNode = this._context.createGain();
-    gainNode.gain.value = 0;
-    
-    // ADSR envelope
-    const velocity = note.velocity / 127;
-    const noteDuration = note.duration || duration;
-    
-    gainNode.gain.setValueAtTime(0, startTime);
-    gainNode.gain.linearRampToValueAtTime(velocity * 0.5, startTime + attack);
-    gainNode.gain.linearRampToValueAtTime(velocity * sustain * 0.5, startTime + attack + decay);
-    gainNode.gain.setValueAtTime(velocity * sustain * 0.5, startTime + noteDuration - release);
-    gainNode.gain.linearRampToValueAtTime(0, startTime + noteDuration);
-    
-    osc.connect(gainNode);
-    
-    return { oscillator: osc, gainNode };
-  }
-  
-  // Synthesize drum hit
-  synthesizeDrum(
-    drumType: keyof typeof DRUM_MIDI,
-    startTime: number,
-    velocity: number
-  ): { nodes: AudioNode[] } {
-    const spec = createDrumSynthSpec(drumType);
-    const nodes: AudioNode[] = [];
-    
-    const gainNode = this._context.createGain();
-    gainNode.gain.value = 0;
-    gainNode.gain.linearRampToValueAtTime(velocity / 127 * 0.6, startTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + spec.decay);
-    nodes.push(gainNode);
-    
-    if (spec.type === 'noise') {
-      // Create noise buffer
-      const bufferSize = this._context.sampleRate * spec.decay;
-      const noiseBuffer = this._context.createBuffer(1, bufferSize, this._context.sampleRate);
-      const noiseData = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        noiseData[i] = Math.random() * 2 - 1;
-      }
-      
-      const noiseSource = this._context.createBufferSource();
-      noiseSource.buffer = noiseBuffer;
-      noiseSource.start(startTime);
-      nodes.push(noiseSource);
-      
-      let lastNode: AudioNode = noiseSource;
-      
-      if (spec.filter) {
-        const filter = this._context.createBiquadFilter();
-        filter.type = spec.filter.type;
-        filter.frequency.value = spec.filter.frequency;
-        if (spec.filter.Q) filter.Q.value = spec.filter.Q;
-        lastNode.connect(filter);
-        lastNode = filter;
-        nodes.push(filter);
-      }
-      
-      lastNode.connect(gainNode);
-    } else {
-      // Oscillator-based (kick, toms)
-      const osc = this._context.createOscillator();
-      osc.frequency.value = spec.frequency || 150;
-      osc.frequency.setValueAtTime(spec.frequency || 150, startTime);
-      
-      if (spec.pitchDecay) {
-        osc.frequency.exponentialRampToValueAtTime(
-          20,
-          startTime + spec.pitchDecay
-        );
-      }
-      
-      osc.type = 'sine';
-      osc.start(startTime);
-      osc.stop(startTime + spec.decay);
-      
-      let lastNode: AudioNode = osc;
-      
-      if (spec.filter) {
-        const filter = this._context.createBiquadFilter();
-        filter.type = spec.filter.type;
-        filter.frequency.value = spec.filter.frequency;
-        lastNode.connect(filter);
-        lastNode = filter;
-        nodes.push(filter);
-      }
-      
-      lastNode.connect(gainNode);
-      nodes.push(osc);
+
+  playTrack(track: Track, offset: number = 0, effects?: EffectSettings): void {
+    if (this._context.state === 'suspended') {
+      this._context.resume();
     }
+
+    this.stopAll();
     
-    return { nodes };
+    if (effects) {
+      this.setEffects(effects);
+    }
+
+    this.pausedAt = offset;
+    this.startTime = this._context.currentTime - offset;
+    this.isPlaying = true;
+
+    const hasSolo = track.stems.some(s => s.solo);
+
+    for (const stem of track.stems) {
+      if (!stem.audioBuffer) continue;
+      
+      let effectiveVolume = stem.volume;
+      if (stem.muted) effectiveVolume = 0;
+      if (hasSolo && !stem.solo) effectiveVolume = 0;
+
+      const source = this._context.createBufferSource();
+      source.buffer = stem.audioBuffer;
+
+      const gainNode = this._context.createGain();
+      gainNode.gain.value = effectiveVolume;
+
+      source.connect(gainNode);
+      gainNode.connect(this.getMasterInput());
+
+      source.start(0, offset);
+      
+      this.stemPlayers.set(stem.type, { source, gain: gainNode });
+      
+      source.onended = () => {
+        // Handle end if needed
+      };
+    }
   }
-  
-  // Render notes to an AudioBuffer
-  renderNotesToBuffer(
-    notes: Note[],
-    duration: number,
-    stemType: StemType
-  ): AudioBuffer {
-    const sampleRate = this._context.sampleRate;
-    const numSamples = Math.ceil(duration * sampleRate);
-    const buffer = this._context.createBuffer(2, numSamples, sampleRate);
+
+  pause(): void {
+    if (!this.isPlaying) return;
+    this.pausedAt = this.getCurrentTime();
+    this.stopAll(false);
+  }
+
+  stop(): void {
+    this.stopAll(true);
+  }
+
+  setStemVolume(stemType: StemType, volume: number): void {
+    const player = this.stemPlayers.get(stemType);
+    if (player) {
+      player.gain.gain.setTargetAtTime(volume, this._context.currentTime, 0.015);
+    }
+  }
+
+  setStemMute(stemType: StemType, isMuted: boolean, originalVolume: number): void {
+    const player = this.stemPlayers.get(stemType);
+    if (player) {
+      const targetVolume = isMuted ? 0 : originalVolume;
+      player.gain.gain.setTargetAtTime(targetVolume, this._context.currentTime, 0.015);
+    }
+  }
+
+  setStemSolo(stemType: StemType, isSolo: boolean, allStems: Stem[]): void {
+    const hasSolo = allStems.some(s => s.solo);
     
-    const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
-    
-    // Render each note
-    for (const note of notes) {
+    allStems.forEach(stem => {
+       const player = this.stemPlayers.get(stem.type);
+       if (player) {
+         let targetVolume = stem.volume;
+         if (stem.muted) targetVolume = 0;
+         if (hasSolo && !stem.solo) targetVolume = 0;
+
+         player.gain.gain.setTargetAtTime(targetVolume, this._context.currentTime, 0.015);
+       }
+    });
+  }
+
+  renderNoteToBufferSync(
+    note: Note,
+    offlineContext: OfflineAudioContext,
+    stemType: StemType,
+    synthParams?: SynthParams
+  ): void {
       if (stemType === 'drums') {
-        // Render drum
-        const drumType = Object.entries(DRUM_MIDI).find(
-          ([, midi]) => midi === note.pitch
-        )?.[0] as keyof typeof DRUM_MIDI;
-        
-        if (drumType) {
-          const spec = createDrumSynthSpec(drumType);
-          const startSample = Math.floor(note.startTime * sampleRate);
-          
-          if (spec.type === 'noise') {
-            // Generate noise
-            const noiseBuffer = offlineContext.createBuffer(1, 
-              Math.ceil(spec.decay * sampleRate), sampleRate);
-            const noiseData = noiseBuffer.getChannelData(0);
-            for (let i = 0; i < noiseData.length; i++) {
-              noiseData[i] = Math.random() * 2 - 1;
-            }
-            
-            const source = offlineContext.createBufferSource();
-            source.buffer = noiseBuffer;
-            source.start(startSample / sampleRate);
-            
-            let lastNode: AudioNode = source;
-            
-            if (spec.filter) {
-              const filter = offlineContext.createBiquadFilter();
-              filter.type = spec.filter.type;
-              filter.frequency.value = spec.filter.frequency;
-              if (spec.filter.Q) filter.Q.value = spec.filter.Q;
-              lastNode.connect(filter);
-              lastNode = filter;
-            }
-            
-            const gain = offlineContext.createGain();
-            gain.gain.value = note.velocity / 127 * 0.5;
-            lastNode.connect(gain);
-            gain.connect(offlineContext.destination);
-          } else {
-            // Oscillator-based drum
-            const osc = offlineContext.createOscillator();
-            osc.type = 'sine';
-            osc.frequency.value = spec.frequency || 150;
-            
-            if (spec.pitchDecay) {
-              osc.frequency.setValueAtTime(spec.frequency || 150, startSample / sampleRate);
-              osc.frequency.exponentialRampToValueAtTime(20, startSample / sampleRate + spec.pitchDecay);
-            }
-            
-            osc.start(startSample / sampleRate);
-            osc.stop(startSample / sampleRate + spec.decay);
-            
-            const gain = offlineContext.createGain();
-            gain.gain.setValueAtTime(note.velocity / 127 * 0.5, startSample / sampleRate);
-            gain.gain.exponentialRampToValueAtTime(0.001, startSample / sampleRate + spec.decay);
-            
-            osc.connect(gain);
-            gain.connect(offlineContext.destination);
-          }
-        }
+         // Logic inside async method
       } else {
-        // Render melodic note
         const osc = offlineContext.createOscillator();
         
-        // Different oscillator types per stem
-        switch (stemType) {
-          case 'bass':
-            osc.type = 'sawtooth';
-            break;
-          case 'melody':
-            osc.type = 'square';
-            break;
-          case 'harmony':
-            osc.type = 'triangle';
-            break;
-          default:
-            osc.type = 'sine';
+        if (synthParams) {
+          osc.type = synthParams.oscillatorType;
+        } else {
+          switch (stemType) {
+            case 'bass': osc.type = 'sawtooth'; break;
+            case 'melody': osc.type = 'square'; break;
+            case 'harmony': osc.type = 'triangle'; break;
+            default: osc.type = 'sine';
+          }
         }
         
         osc.frequency.value = midiToFrequency(note.pitch);
-        
         const gain = offlineContext.createGain();
-        const attack = 0.02;
-        const release = 0.1;
         
-        gain.gain.setValueAtTime(0, note.startTime);
+        const attack = synthParams?.attack ?? 0.02;
+        const decay = synthParams?.decay ?? 0;
+        const sustain = synthParams?.sustain ?? 1;
+        const release = synthParams?.release ?? 0.1;
+
+        const duration = note.duration;
+        const now = note.startTime;
+
+        // ADSR
+        gain.gain.setValueAtTime(0, now);
         gain.gain.linearRampToValueAtTime(
-          note.velocity / 127 * 0.3,
-          note.startTime + attack
+            (note.velocity / 127) * 0.3,
+            now + attack
         );
+
+        if (decay > 0) {
+             gain.gain.linearRampToValueAtTime(
+                (note.velocity / 127) * 0.3 * sustain,
+                now + attack + decay
+            );
+        }
+
+        const releaseStart = now + duration - release;
+        const releaseStartTime = Math.max(releaseStart, now + attack + decay);
+
         gain.gain.setValueAtTime(
-          note.velocity / 127 * 0.25,
-          note.startTime + note.duration - release
+             (note.velocity / 127) * 0.3 * sustain,
+             releaseStartTime
         );
-        gain.gain.linearRampToValueAtTime(0, note.startTime + note.duration);
         
-        osc.start(note.startTime);
-        osc.stop(note.startTime + note.duration + 0.1);
+        gain.gain.linearRampToValueAtTime(0, now + duration);
+
+        osc.start(now);
+        osc.stop(now + duration + 0.1);
+
+        if (synthParams?.filterFrequency) {
+            const filter = offlineContext.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = synthParams.filterFrequency;
+            if (synthParams.filterQ) filter.Q.value = synthParams.filterQ;
+
+            osc.connect(filter);
+            filter.connect(gain);
+        } else {
+            osc.connect(gain);
+        }
         
-        osc.connect(gain);
         gain.connect(offlineContext.destination);
       }
-    }
-    
-    // Render synchronously (OfflineAudioContext doesn't support async in this context)
-    // We'll use a Promise-based approach
-    return buffer;
   }
   
-  // Render notes asynchronously
   async renderNotesToBufferAsync(
     notes: Note[],
     duration: number,
-    stemType: StemType
+    stemType: StemType,
+    synthParams?: SynthParams
   ): Promise<AudioBuffer> {
     const sampleRate = this._context.sampleRate;
     const numSamples = Math.ceil(duration * sampleRate);
     const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
     
-    // Render each note
     for (const note of notes) {
       if (stemType === 'drums') {
         const drumType = Object.entries(DRUM_MIDI).find(
@@ -424,51 +340,13 @@ export class AudioEngine {
           }
         }
       } else {
-        const osc = offlineContext.createOscillator();
-        
-        switch (stemType) {
-          case 'bass':
-            osc.type = 'sawtooth';
-            break;
-          case 'melody':
-            osc.type = 'square';
-            break;
-          case 'harmony':
-            osc.type = 'triangle';
-            break;
-          default:
-            osc.type = 'sine';
-        }
-        
-        osc.frequency.value = midiToFrequency(note.pitch);
-        
-        const gain = offlineContext.createGain();
-        const attack = stemType === 'harmony' ? 0.1 : 0.02;
-        const release = stemType === 'harmony' ? 0.2 : 0.1;
-        
-        gain.gain.setValueAtTime(0, note.startTime);
-        gain.gain.linearRampToValueAtTime(
-          note.velocity / 127 * 0.3,
-          note.startTime + attack
-        );
-        gain.gain.setValueAtTime(
-          note.velocity / 127 * 0.25,
-          note.startTime + note.duration - release
-        );
-        gain.gain.linearRampToValueAtTime(0, note.startTime + note.duration);
-        
-        osc.start(note.startTime);
-        osc.stop(note.startTime + note.duration + 0.1);
-        
-        osc.connect(gain);
-        gain.connect(offlineContext.destination);
+        this.renderNoteToBufferSync(note, offlineContext, stemType, synthParams);
       }
     }
     
     return offlineContext.startRendering();
   }
   
-  // Mix multiple stems into a single buffer
   async mixStemsToBuffer(
     stems: Stem[],
     duration: number,
@@ -478,11 +356,9 @@ export class AudioEngine {
     const numSamples = Math.ceil(duration * sampleRate);
     const offlineContext = new OfflineAudioContext(2, numSamples, sampleRate);
     
-    // Create master chain for offline context
     const masterGain = offlineContext.createGain();
     masterGain.gain.value = 0.8;
     
-    // EQ
     const eqLow = offlineContext.createBiquadFilter();
     eqLow.type = 'lowshelf';
     eqLow.frequency.value = 320;
@@ -496,7 +372,6 @@ export class AudioEngine {
     eqHigh.type = 'highshelf';
     eqHigh.frequency.value = 3200;
     
-    // Compressor
     const compressor = offlineContext.createDynamicsCompressor();
     compressor.threshold.value = -24;
     compressor.knee.value = 30;
@@ -504,7 +379,6 @@ export class AudioEngine {
     compressor.attack.value = 0.003;
     compressor.release.value = 0.25;
     
-    // Apply effects if provided
     if (effects) {
       if (effects.eq.enabled) {
         eqLow.gain.value = effects.eq.low;
@@ -519,17 +393,14 @@ export class AudioEngine {
       }
     }
     
-    // Connect chain
     eqLow.connect(eqMid);
     eqMid.connect(eqHigh);
     eqHigh.connect(compressor);
     compressor.connect(masterGain);
     masterGain.connect(offlineContext.destination);
     
-    // Check for solo
     const hasSolo = stems.some(s => s.solo);
     
-    // Mix stems
     for (const stem of stems) {
       if (!stem.audioBuffer) continue;
       if (stem.muted) continue;
@@ -549,9 +420,7 @@ export class AudioEngine {
     return offlineContext.startRendering();
   }
   
-  // Update effects
   setEffects(effects: EffectSettings): void {
-    // Reverb wet/dry mix
     if (effects.reverb.enabled) {
       this.reverbGain.gain.value = effects.reverb.mix;
       this.dryGain.gain.value = 1 - effects.reverb.mix;
@@ -560,7 +429,6 @@ export class AudioEngine {
       this.dryGain.gain.value = 1;
     }
     
-    // EQ
     if (effects.eq.enabled) {
       this.eqLow.gain.value = effects.eq.low;
       this.eqMid.gain.value = effects.eq.mid;
@@ -571,7 +439,6 @@ export class AudioEngine {
       this.eqHigh.gain.value = 0;
     }
     
-    // Compressor
     if (effects.compressor.enabled) {
       this.compressor.threshold.value = effects.compressor.threshold;
       this.compressor.ratio.value = effects.compressor.ratio;
@@ -580,44 +447,46 @@ export class AudioEngine {
     }
   }
   
-  // Get master gain node for connecting sources
   getMasterInput(): AudioNode {
     return this.eqLow;
   }
   
-  // Get current time
   getCurrentTime(): number {
     if (this.isPlaying) {
-      return this._context.currentTime - this.startTime + this.pausedAt;
+      return this._context.currentTime - this.startTime;
     }
     return this.pausedAt;
   }
   
-  // Cleanup
   dispose(): void {
-    this.stopAll();
+    this.stopAll(true);
     if (audioContext) {
       audioContext.close();
       audioContext = null;
     }
   }
   
-  stopAll(): void {
+  stopAll(resetTime: boolean = true): void {
     this.stemPlayers.forEach(({ source }) => {
       if (source) {
         try {
           source.stop();
+          source.disconnect();
         } catch (e) {
-          // Ignore errors from already stopped sources
+          // Ignore
         }
       }
     });
     this.stemPlayers.clear();
     this.isPlaying = false;
+
+    if (resetTime) {
+      this.pausedAt = 0;
+      this.startTime = 0;
+    }
   }
 }
 
-// Global audio engine instance
 let engineInstance: AudioEngine | null = null;
 
 export function getAudioEngine(): AudioEngine {

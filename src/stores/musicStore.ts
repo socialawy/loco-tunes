@@ -38,10 +38,6 @@ interface MusicStore {
   generationProgress: number;
   isExporting: boolean;
   
-  // Audio sources and gain nodes for live control
-  activeSources: Map<StemType, AudioBufferSourceNode>;
-  activeGains: Map<StemType, GainNode>;
-  
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
   generateTrack: () => Promise<void>;
@@ -72,8 +68,6 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   isGenerating: false,
   generationProgress: 0,
   isExporting: false,
-  activeSources: new Map(),
-  activeGains: new Map(),
   
   // Set generation params
   setParams: (newParams) => set((state) => ({
@@ -152,10 +146,9 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Restart playback at current time (used when mixer controls change)
   restartPlayback: () => {
-    const { isPlaying, currentTime } = get();
+    const { isPlaying } = get();
     if (!isPlaying) return;
     
-    // Pause, then resume at same position
     get().pauseTrack();
     setTimeout(() => {
       get().playTrack();
@@ -164,117 +157,58 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Play the track
   playTrack: () => {
-    const { currentTrack, isPlaying, activeSources, effects } = get();
+    const { currentTrack, isPlaying, effects } = get();
     if (!currentTrack || isPlaying) return;
     
     const engine = getAudioEngine();
-    const context = engine.context;
     
-    // Check if context is suspended (browser autoplay policy)
-    if (context.state === 'suspended') {
-      context.resume().catch(err => {
-        console.error('Failed to resume AudioContext:', err);
-        toast.error('Click anywhere to enable audio');
-      });
-    }
-    
-    // Stop any existing sources
-    activeSources.forEach((source) => {
-      try {
-        source.stop();
-      } catch (e) {
-        // Ignore
-      }
-    });
-    
-    // Apply effects before playback
-    engine.setEffects(effects);
-    
-    const newSources = new Map<StemType, AudioBufferSourceNode>();
-    const newGains = new Map<StemType, GainNode>();
-    
-    // Check if any stem is soloed
-    const hasSolo = currentTrack.stems.some(s => s.solo);
-    
-    // Play each stem
-    for (const stem of currentTrack.stems) {
-      if (!stem.audioBuffer) continue;
-      if (stem.muted) continue;
-      if (hasSolo && !stem.solo) continue;
+    try {
+      engine.playTrack(currentTrack, get().currentTime, effects);
+      set({ isPlaying: true });
       
-      const source = context.createBufferSource();
-      source.buffer = stem.audioBuffer;
+      // Update time loop
+      const updateTime = () => {
+        const { isPlaying, currentTrack } = get();
+        if (!isPlaying || !currentTrack) return;
+
+        const currentTime = engine.getCurrentTime();
+
+        if (currentTime >= currentTrack.duration) {
+          get().stopTrack();
+          return;
+        }
+
+        set({ currentTime });
+        requestAnimationFrame(updateTime);
+      };
       
-      const gainNode = context.createGain();
-      gainNode.gain.value = stem.volume;
-      
-      source.connect(gainNode);
-      gainNode.connect(engine.getMasterInput());
-      
-      source.start(0, get().currentTime);
-      newSources.set(stem.type, source);
-      newGains.set(stem.type, gainNode);
-    }
-    
-    set({ isPlaying: true, activeSources: newSources, activeGains: newGains });
-    
-    // Update time during playback
-    const startTime = context.currentTime - get().currentTime;
-    const updateTime = () => {
-      const { isPlaying, currentTrack } = get();
-      if (!isPlaying || !currentTrack) return;
-      
-      const elapsed = context.currentTime - startTime;
-      
-      if (elapsed >= currentTrack.duration) {
-        get().stopTrack();
-        return;
-      }
-      
-      set({ currentTime: elapsed });
       requestAnimationFrame(updateTime);
-    };
-    
-    requestAnimationFrame(updateTime);
+    } catch (err) {
+      console.error('Playback failed:', err);
+      toast.error('Failed to play track');
+    }
   },
   
   // Pause the track
   pauseTrack: () => {
-    const { activeSources, isPlaying } = get();
+    const { isPlaying } = get();
     if (!isPlaying) return;
     
-    // Stop all sources
-    activeSources.forEach((source) => {
-      try {
-        source.stop();
-      } catch (e) {
-        // Ignore
-      }
-    });
+    const engine = getAudioEngine();
+    engine.pause();
     
-    set({ isPlaying: false, activeSources: new Map(), activeGains: new Map() });
+    set({ isPlaying: false });
   },
   
   // Stop the track
   stopTrack: () => {
-    const { activeSources } = get();
-    
-    // Stop all sources
-    activeSources.forEach((source) => {
-      try {
-        source.stop();
-      } catch (e) {
-        // Ignore
-      }
-    });
-    
-    set({ isPlaying: false, currentTime: 0, activeSources: new Map(), activeGains: new Map() });
+    const engine = getAudioEngine();
+    engine.stop();
+    set({ isPlaying: false, currentTime: 0 });
   },
   
-  // Set stem volume with smooth ramping during playback
+  // Set stem volume
   setStemVolume: (stemType: StemType, volume: number) => {
-    const { isPlaying, activeGains } = get();
-    
     // Update state
     set((state) => ({
       currentTrack: state.currentTrack ? {
@@ -285,64 +219,73 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       } : null,
     }));
     
-    // Apply smooth ramp to active gain node during playback
-    if (isPlaying) {
-      const gainNode = activeGains.get(stemType);
-      if (gainNode) {
-        const engine = getAudioEngine();
-        const context = engine.context;
-        // Smooth ramp over 15ms to prevent clicks
-        gainNode.gain.setTargetAtTime(volume, context.currentTime, 0.015);
-      }
-    }
+    // Update engine
+    const engine = getAudioEngine();
+    engine.setStemVolume(stemType, volume);
   },
   
-  // Toggle stem mute with playback restart
+  // Toggle stem mute
   toggleStemMute: (stemType: StemType) => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+
+    const stem = currentTrack.stems.find(s => s.type === stemType);
+    if (!stem) return;
+
+    const newMuted = !stem.muted;
+
     set((state) => ({
       currentTrack: state.currentTrack ? {
         ...state.currentTrack,
         stems: state.currentTrack.stems.map(s => 
-          s.type === stemType ? { ...s, muted: !s.muted } : s
+          s.type === stemType ? { ...s, muted: newMuted } : s
         ),
       } : null,
     }));
     
-    // Restart playback to apply mute change
-    if (get().isPlaying) {
-      get().restartPlayback();
-    }
+    const engine = getAudioEngine();
+    engine.setStemMute(stemType, newMuted, stem.volume);
   },
   
-  // Toggle stem solo with playback restart
+  // Toggle stem solo
   toggleStemSolo: (stemType: StemType) => {
+     const { currentTrack } = get();
+    if (!currentTrack) return;
+
+    const stem = currentTrack.stems.find(s => s.type === stemType);
+    if (!stem) return;
+
+    const newSolo = !stem.solo;
+
+    // Update state first to get the full picture of stems
     set((state) => ({
       currentTrack: state.currentTrack ? {
         ...state.currentTrack,
         stems: state.currentTrack.stems.map(s => 
-          s.type === stemType ? { ...s, solo: !s.solo } : s
+          s.type === stemType ? { ...s, solo: newSolo } : s
         ),
       } : null,
     }));
     
-    // Restart playback to apply solo change
-    if (get().isPlaying) {
-      get().restartPlayback();
+    const engine = getAudioEngine();
+    // We pass the updated stems list
+    const updatedStems = get().currentTrack?.stems;
+    if (updatedStems) {
+        engine.setStemSolo(stemType, newSolo, updatedStems);
     }
   },
   
-  // Set effects and apply to engine
+  // Set effects
   setEffects: (newEffects: Partial<EffectSettings>) => {
     set((state) => ({
       effects: { ...state.effects, ...newEffects },
     }));
     
-    // Apply to audio engine immediately
     const engine = getAudioEngine();
     engine.setEffects(get().effects);
   },
   
-  // Export to WAV with all stems mixed
+  // Export to WAV
   exportWav: async () => {
     const { currentTrack, effects } = get();
     if (!currentTrack) return;
@@ -353,7 +296,6 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       const engine = getAudioEngine();
       
-      // Mix all stems together with effects
       const mixedBuffer = await engine.mixStemsToBuffer(
         currentTrack.stems,
         currentTrack.duration,
