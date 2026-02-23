@@ -50,8 +50,6 @@ export function StemMixer() {
       
       <div className="space-y-4">
         {currentTrack.stems.map((stem) => {
-          const isAudible = !stem.muted && (!hasSolo || stem.solo);
-          
           return (
             <div
               key={stem.type}
@@ -143,9 +141,8 @@ export function StemMixer() {
                   disabled={stem.muted}
                   className="flex-1"
                   style={{
-                    // @ts-ignore
                     '--slider-color': STEM_COLORS[stem.type],
-                  }}
+                  } as React.CSSProperties}
                 />
               </div>
               
@@ -184,34 +181,34 @@ function MiniWaveform({ buffer, color }: { buffer: AudioBuffer; color: string })
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
+    // Handle High DPI displays
+    const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * 2;
-    canvas.height = rect.height * 2;
-    ctx.scale(2, 2);
     
-    ctx.fillStyle = 'transparent';
-    ctx.fillRect(0, 0, rect.width, rect.height);
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    // Clear canvas
+    ctx.clearRect(0, 0, rect.width, rect.height);
     
     const data = buffer.getChannelData(0);
     const step = Math.ceil(data.length / rect.width);
     
-    ctx.beginPath();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
+    ctx.fillStyle = color;
     
     for (let i = 0; i < rect.width; i++) {
-      const dataIndex = i * step;
-      const value = data[dataIndex] || 0;
-      const y = rect.height / 2 + value * (rect.height / 2) * 0.9;
-      
-      if (i === 0) {
-        ctx.moveTo(i, y);
-      } else {
-        ctx.lineTo(i, y);
+      let max = 0;
+      for (let j = 0; j < step; j++) {
+        const val = Math.abs(data[(i * step) + j] || 0);
+        if (val > max) max = val;
       }
+
+      const height = Math.max(1, max * rect.height); // Ensure at least 1px height
+      const y = (rect.height - height) / 2;
+
+      ctx.fillRect(i, y, 1, height);
     }
-    
-    ctx.stroke();
   }, [buffer, color]);
   
   return (

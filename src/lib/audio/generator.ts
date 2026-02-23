@@ -1,19 +1,37 @@
-// Main music generator combining all components
-
-import type { GenerationParams, Stem, StemType, Track, Note } from '@/types/music';
-import { DEFAULT_EFFECTS, STEM_COLORS } from '@/types/music';
-import { noteToMidi, generateChordProgression, generateHarmonyNotes, generateBassNotes } from './chords';
+import {
+  Track,
+  Stem,
+  StemType,
+  GenerationParams,
+  Note,
+  Chord,
+  STEM_COLORS,
+} from '@/types/music';
+import { getAudioEngine } from './engine';
+import {
+  noteToMidi,
+  generateChordProgression,
+  generateBassNotes,
+  generateHarmonyNotes,
+} from './chords';
 import { generateDrumNotes } from './drums';
 import { generateMelodyNotes } from './melody';
-import { getAudioEngine } from './engine';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as generateId } from 'uuid';
 
-// Generate a unique ID without external dependency
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+// Helper types for hardware detection
+interface ExtendedNavigator extends Navigator {
+  deviceMemory?: number;
+  connection?: {
+    effectiveType?: string;
+  };
 }
 
-// Main generation function
+interface ExtendedPerformance extends Performance {
+  memory?: {
+    jsHeapSizeLimit: number;
+  };
+}
+
 export async function generateTrack(params: GenerationParams): Promise<Track> {
   const { bpm, genre, mood, duration, key, scale, complexity } = params;
   
@@ -54,7 +72,8 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
       stem.audioBuffer = await engine.renderNotesToBufferAsync(
         stem.notes,
         actualDuration,
-        stem.type
+        stem.type,
+        stem.synthParams
       );
     } catch (error) {
       console.error(`Failed to render ${stem.type} stem:`, error);
@@ -84,6 +103,7 @@ export async function regenerateStem(
   
   let notes: Note[] = [];
   const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  const chordRoots = chords.map(c => c.chord[0]);
   
   switch (stemType) {
     case 'drums':
@@ -93,7 +113,7 @@ export async function regenerateStem(
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
@@ -101,9 +121,14 @@ export async function regenerateStem(
   }
   
   const engine = getAudioEngine();
-  const audioBuffer = await engine.renderNotesToBufferAsync(notes, track.duration, stemType);
-  
   const existingStem = track.stems.find(s => s.type === stemType);
+
+  const audioBuffer = await engine.renderNotesToBufferAsync(
+    notes,
+    track.duration,
+    stemType,
+    existingStem?.synthParams
+  );
   
   return {
     type: stemType,
@@ -113,6 +138,7 @@ export async function regenerateStem(
     muted: existingStem?.muted ?? false,
     solo: existingStem?.solo ?? false,
     color: STEM_COLORS[stemType],
+    synthParams: existingStem?.synthParams,
   };
 }
 
@@ -125,14 +151,18 @@ export async function generateStemVariation(
   const rootMidi = noteToMidi(key, 4);
   const beatsPerBar = 4;
   const beatDuration = 60 / bpm;
-  const numBars = Math.ceil(stem.notes.length > 0 
-    ? stem.notes[stem.notes.length - 1].startTime / (beatsPerBar * beatDuration) + 1
+
+  const lastNote = stem.notes.length > 0 ? stem.notes[stem.notes.length - 1] : null;
+  const lastNoteEnd = lastNote ? lastNote.startTime + lastNote.duration : 0;
+  const numBars = Math.ceil(lastNoteEnd > 0
+    ? lastNoteEnd / (beatsPerBar * beatDuration)
     : 4);
   
   // Add some variation by adjusting complexity
   const variedComplexity = Math.max(0, Math.min(1, complexity + (Math.random() - 0.5) * 0.3));
   
   const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  const chordRoots = chords.map(c => c.chord[0]);
   let notes: Note[] = [];
   
   switch (stem.type) {
@@ -143,7 +173,7 @@ export async function generateStemVariation(
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
@@ -152,7 +182,12 @@ export async function generateStemVariation(
   
   const engine = getAudioEngine();
   const duration = numBars * beatsPerBar * beatDuration;
-  const audioBuffer = await engine.renderNotesToBufferAsync(notes, duration, stem.type);
+  const audioBuffer = await engine.renderNotesToBufferAsync(
+    notes,
+    duration,
+    stem.type,
+    stem.synthParams
+  );
   
   return {
     ...stem,
@@ -163,6 +198,8 @@ export async function generateStemVariation(
 
 // Helper function to manually override hardware detection
 export function setHardwareOverride(memory: number, cores?: number) {
+  if (typeof window === 'undefined') return;
+
   localStorage.setItem('loco-tunes-memory-override', memory.toString());
   if (cores) {
     localStorage.setItem('loco-tunes-cores-override', cores.toString());
@@ -172,6 +209,8 @@ export function setHardwareOverride(memory: number, cores?: number) {
 
 // Helper function to clear manual override
 export function clearHardwareOverride() {
+  if (typeof window === 'undefined') return;
+
   localStorage.removeItem('loco-tunes-memory-override');
   localStorage.removeItem('loco-tunes-cores-override');
   console.log('Hardware override cleared');
@@ -212,32 +251,36 @@ export function detectHardwareCapabilities(): {
     if (manualMemory) {
       memory = parseInt(manualMemory);
     } else {
+      const nav = navigator as ExtendedNavigator;
       // Try deviceMemory API first
-      const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+      const deviceMemory = nav.deviceMemory;
       memory = deviceMemory || 8;
       
       // Try performance.memory as additional check (Chrome)
-      if (typeof performance !== 'undefined' && (performance as any).memory) {
-        const jsHeapSizeLimit = (performance as any).memory.jsHeapSizeLimit;
-        const estimatedMemory = jsHeapSizeLimit / (1024 ** 3); // Convert to GB
-        
-        // Use the higher of deviceMemory or estimatedMemory
-        if (estimatedMemory > memory) {
-          memory = Math.round(estimatedMemory);
-        }
-        
-        // Additional heuristic: if we have 8+ cores but memory seems low, assume at least 16GB
-        // BUT only on desktop, not mobile (to avoid over-allocating memory on mobile)
-        const isMobile = (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                      ((navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints && (navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints > 0));
-        
-        if (!isMobile && cores >= 8 && memory < 16) {
-          console.log('Heuristic: 8+ cores detected on desktop, assuming 16GB RAM');
-          memory = 16;
-        } else if (isMobile) {
-          console.log('Mobile device detected, using conservative memory detection');
-          // On mobile, be more conservative - don't assume high memory
-          memory = Math.min(memory, 8); // Cap mobile at 8GB max
+      if (typeof performance !== 'undefined') {
+        const perf = performance as ExtendedPerformance;
+        if (perf.memory) {
+          const jsHeapSizeLimit = perf.memory.jsHeapSizeLimit;
+          const estimatedMemory = jsHeapSizeLimit / (1024 ** 3); // Convert to GB
+
+          // Use the higher of deviceMemory or estimatedMemory
+          if (estimatedMemory > memory) {
+            memory = Math.round(estimatedMemory);
+          }
+
+          // Additional heuristic: if we have 8+ cores but memory seems low, assume at least 16GB
+          // BUT only on desktop, not mobile (to avoid over-allocating memory on mobile)
+          const isMobile = (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                        (nav.maxTouchPoints && nav.maxTouchPoints > 0));
+
+          if (!isMobile && cores >= 8 && memory < 16) {
+            console.log('Heuristic: 8+ cores detected on desktop, assuming 16GB RAM');
+            memory = 16;
+          } else if (isMobile) {
+            console.log('Mobile device detected, using conservative memory detection');
+            // On mobile, be more conservative - don't assume high memory
+            memory = Math.min(memory, 8); // Cap mobile at 8GB max
+          }
         }
       }
       
@@ -245,7 +288,7 @@ export function detectHardwareCapabilities(): {
       memory = Math.max(4, Math.min(memory, 128));
     }
     
-    console.log('Hardware detection:', { cores, memory, deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory, manualOverride: !!manualMemory });
+    console.log('Hardware detection:', { cores, memory, deviceMemory: (navigator as ExtendedNavigator).deviceMemory, manualOverride: !!manualMemory });
   } catch (e) {
     console.warn('Could not detect memory, using default:', e);
   }
@@ -254,9 +297,9 @@ export function detectHardwareCapabilities(): {
   // Network detection
   let networkType = 'unknown';
   try {
-    if ('connection' in navigator) {
-      const connection = (navigator as Navigator & { connection: { effectiveType?: string } }).connection;
-      networkType = connection?.effectiveType || 'unknown';
+    const nav = navigator as ExtendedNavigator;
+    if (nav.connection) {
+      networkType = nav.connection.effectiveType || 'unknown';
     }
   } catch (e) {
     console.warn('Network detection failed:', e);
