@@ -23,7 +23,7 @@ jobs:
       - name: Get PR diff
         run: |
           gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr_diff.txt
-          head -c 30000 /tmp/pr_diff.txt > /tmp/pr_diff_trimmed.txt
+          head -c 100000 /tmp/pr_diff.txt > /tmp/pr_diff_trimmed.txt
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -33,18 +33,26 @@ jobs:
           PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body' || echo "No description")
 
           cat > /tmp/prompt.txt <<PROMPTEOF
-          You are a code reviewer for the loco-tunes project (Next.js music generation app).
-          Review this PR. Return a JSON object with these exact keys:
-          decision (APPROVE, REQUEST_CHANGES, or ESCALATE),
-          summary (1-2 sentences),
-          issues (array of strings, empty if none),
-          risk_level (low, medium, or high),
-          escalation_reason (string, empty if not escalating).
+          You are a senior engineer reviewing code for loco-tunes, a Next.js 16 + TypeScript music generation app using Web Audio API, Zustand, Prisma, and shadcn/ui.
 
-          APPROVE: Clean code, no security issues, low-medium risk.
-          REQUEST_CHANGES: Fixable issues (type errors, missing tests, logic bugs).
-          ESCALATE: Architecture changes, security concerns, high risk.
-          Dependabot PRs: APPROVE if only version bumps.
+          READ THE DIFF LINE BY LINE. For each changed file, check:
+          1. BUGS: null/undefined access, off-by-one errors, race conditions, resource leaks (AudioContext, buffers not released), wrong variable used
+          2. TYPE SAFETY: any casts, missing null checks, incorrect generic params, interface mismatches
+          3. LOGIC: does the code actually do what the PR description claims? Are edge cases handled?
+          4. WEB AUDIO: correct node connection order, proper cleanup of nodes/contexts, sample rate assumptions, timing issues
+          5. STATE: Zustand store mutations, stale closures in React hooks, missing dependency arrays
+          6. SECURITY: XSS via dangerouslySetInnerHTML, unsanitized user input, exposed secrets
+
+          ISSUES MUST reference the specific file and what is wrong. Not vague observations.
+          Bad: "Consider adding error handling" — Good: "engine.ts: createReverb() never disconnects the old reverbNode before reassigning, leaking the previous ConvolverNode"
+
+          Decision rules:
+          - APPROVE: You read the diff, found no bugs or logic errors. Minor style preferences are NOT grounds for REQUEST_CHANGES.
+          - REQUEST_CHANGES: You found actual bugs, type errors, logic errors, or resource leaks. Each issue must cite file + what is wrong.
+          - ESCALATE: Breaking API changes, auth/security changes, data model changes, or you cannot determine correctness from the diff alone.
+          - Dependabot/deps PRs: APPROVE if only version bumps in package.json/lockfile with no breaking major version changes.
+
+          Return JSON with keys: decision, summary, issues (array of specific findings with file references), risk_level, escalation_reason.
 
           PR: ${{ github.event.pull_request.title }}
           Author: ${{ github.event.pull_request.user.login }}
@@ -67,7 +75,7 @@ jobs:
           }' > /tmp/payload.json
 
           HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/gemini_response.json \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}" \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${GEMINI_API_KEY}" \
             -H 'Content-Type: application/json' \
             -d @/tmp/payload.json)
 
