@@ -110,14 +110,25 @@ jobs:
           echo "Raw Gemini response text:"
           echo "$REVIEW_TEXT"
 
-          # Extract JSON from response (handle markdown code blocks)
-          REVIEW_JSON=$(echo "$REVIEW_TEXT" | sed -n '/^{/,/^}/p' | head -20)
-          if [ -z "$REVIEW_JSON" ]; then
-            REVIEW_JSON=$(echo "$REVIEW_TEXT" | sed -n '/```json/,/```/p' | sed '1d;$d')
-          fi
-          if [ -z "$REVIEW_JSON" ]; then
-            REVIEW_JSON="$REVIEW_TEXT"
-          fi
+          # Save response to file for reliable parsing
+          echo "$REVIEW_TEXT" > /tmp/review_raw.txt
+
+          # Extract JSON from response using python (handles code blocks, multiline)
+          REVIEW_JSON=$(python3 -c "
+          import json, re, sys
+          text = open('/tmp/review_raw.txt').read()
+          # Try to find JSON in code blocks first
+          m = re.search(r'\`\`\`json?\s*\n(.*?)\n\`\`\`', text, re.DOTALL)
+          if m:
+              text = m.group(1)
+          # Find the JSON object
+          m = re.search(r'\{.*\}', text, re.DOTALL)
+          if m:
+              obj = json.loads(m.group())
+              print(json.dumps(obj))
+          else:
+              print(json.dumps({'decision': 'ESCALATE', 'summary': 'Could not parse JSON', 'issues': [], 'risk_level': 'unknown'}))
+          " 2>/dev/null || echo '{"decision":"ESCALATE","summary":"JSON parse failed","issues":[],"risk_level":"unknown"}')
 
           DECISION=$(echo "$REVIEW_JSON" | jq -r '.decision // "ESCALATE"')
           SUMMARY=$(echo "$REVIEW_JSON" | jq -r '.summary // "Review parsing failed"')
