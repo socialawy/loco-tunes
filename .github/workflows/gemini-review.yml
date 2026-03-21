@@ -61,7 +61,7 @@ jobs:
             "contents": [{"parts": [{"text": $prompt}]}],
             "generationConfig": {
               "temperature": 0.1,
-              "maxOutputTokens": 1024,
+              "maxOutputTokens": 4096,
               "responseMimeType": "application/json"
             }
           }' > /tmp/payload.json
@@ -84,12 +84,14 @@ jobs:
           echo "Review JSON:"
           cat /tmp/review.json
 
-          # Parse fields directly from file
-          DECISION=$(jq -r '.decision // "ESCALATE"' /tmp/review.json)
-          SUMMARY=$(jq -r '.summary // "Review parsing failed"' /tmp/review.json)
-          RISK=$(jq -r '.risk_level // "unknown"' /tmp/review.json)
-          ISSUES=$(jq -r 'if .issues and (.issues | length > 0) then (.issues | map("- " + .) | join("\n")) else "" end' /tmp/review.json)
-          ESCALATION=$(jq -r '.escalation_reason // ""' /tmp/review.json)
+          # Parse fields directly from file (set +e so truncated JSON doesn't kill the run)
+          set +e
+          DECISION=$(jq -r '.decision // "ESCALATE"' /tmp/review.json 2>/dev/null || echo "ESCALATE")
+          SUMMARY=$(jq -r '.summary // "Review parsing failed"' /tmp/review.json 2>/dev/null || echo "Review parsing failed")
+          RISK=$(jq -r '.risk_level // "unknown"' /tmp/review.json 2>/dev/null || echo "unknown")
+          ISSUES=$(jq -r 'if .issues and (.issues | length > 0) then (.issues | map("- " + .) | join("\n")) else "" end' /tmp/review.json 2>/dev/null || echo "")
+          ESCALATION=$(jq -r '.escalation_reason // ""' /tmp/review.json 2>/dev/null || echo "")
+          set -e
 
           echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
 
