@@ -28,7 +28,6 @@ jobs:
         uses: google-labs-code/jules-invoke@main
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
-          starting_branch: master
           prompt: |
             You are working on loco-tunes, a Next.js 16 + TypeScript music generation app.
             Tech stack: Web Audio API, Zustand, Prisma, shadcn/ui, Vitest.
