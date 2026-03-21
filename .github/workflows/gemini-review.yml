@@ -112,23 +112,21 @@ jobs:
 
           # Write Python parser to file (avoids bash escaping issues with backticks)
           cat > /tmp/parse_review.py << 'PYEOF'
-          import json, re
-          text = open('/tmp/review_raw.txt').read()
-          # Try code block extraction
-          m = re.search(r'```json?\s*\n(.*?)\n```', text, re.DOTALL)
-          if m:
-              text = m.group(1)
-          # Find JSON object
-          m = re.search(r'\{.*\}', text, re.DOTALL)
-          if m:
-              try:
-                  obj = json.loads(m.group())
-                  print(json.dumps(obj))
-              except json.JSONDecodeError:
-                  print(json.dumps({"decision": "ESCALATE", "summary": "JSON decode error", "issues": [], "risk_level": "unknown"}))
-          else:
-              print(json.dumps({"decision": "ESCALATE", "summary": "No JSON found in response", "issues": [], "risk_level": "unknown"}))
-          PYEOF
+import json, re
+text = open('/tmp/review_raw.txt').read()
+m = re.search(r'```json?\s*\n(.*?)\n```', text, re.DOTALL)
+if m:
+    text = m.group(1)
+m = re.search(r'\{.*\}', text, re.DOTALL)
+if m:
+    try:
+        obj = json.loads(m.group())
+        print(json.dumps(obj))
+    except json.JSONDecodeError:
+        print(json.dumps({"decision": "ESCALATE", "summary": "JSON decode error", "issues": [], "risk_level": "unknown"}))
+else:
+    print(json.dumps({"decision": "ESCALATE", "summary": "No JSON found", "issues": [], "risk_level": "unknown"}))
+PYEOF
 
           REVIEW_JSON=$(python3 /tmp/parse_review.py 2>&1)
           echo "Parsed review JSON: $REVIEW_JSON"
