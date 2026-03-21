@@ -32,6 +32,7 @@ export interface Stem {
   muted: boolean;
   solo: boolean;
   color: string;
+  synthParams?: SynthParams;
 }
 
 export interface Track {
@@ -170,3 +171,19 @@ export const STEM_COLORS: Record<StemType, string> = {
   melody: '#22c55e',  // green
   harmony: '#a855f7', // purple
 };
+
+export interface Chord {
+  chord: number[]; // Array of MIDI note numbers
+  root: number; // Root note MIDI number
+  type: string; // e.g., 'major', 'minor', '7th'
+}
+
+export interface SynthParams {
+  oscillatorType: 'sine' | 'square' | 'sawtooth' | 'triangle';
+  attack: number;
+  decay: number;
+  sustain: number;
+  release: number;
+  filterFrequency?: number;
+  filterQ?: number;
+}
