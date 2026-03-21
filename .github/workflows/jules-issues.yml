@@ -1,0 +1,47 @@
+name: Jules Issue Worker
+
+on:
+  issues:
+    types: [opened, labeled]
+  schedule:
+    - cron: '0 4 * * *' # Daily at 4 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  jules-work:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && !contains(github.event.issue.labels.*.name, 'needs-human-review'))
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Invoke Jules
+        uses: google-labs-code/jules-invoke@main
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          prompt: |
+            You are working on loco-tunes, a Next.js 16 + TypeScript music generation app.
+            Tech stack: Web Audio API, Zustand, Prisma, shadcn/ui, Vitest.
+
+            Check the open GitHub issues and pick the next unassigned one to work on.
+            Priority order: #6 (test coverage), #8 (project saving), #2 (stem remixing), #7 (generation quality), #3 (MIDI export), #4 (continuity memory), #5 (background continuation).
+
+            For each issue:
+            1. Read the issue description and acceptance criteria carefully.
+            2. Implement the feature or fix described.
+            3. Write tests (Vitest) for your changes.
+            4. Make sure existing tests still pass.
+            5. Create a clean PR referencing the issue number (e.g. "Closes #6").
+
+            Do NOT modify .github/workflows/ files.
+            Do NOT change unrelated code.
+            Keep PRs focused — one issue per PR.
