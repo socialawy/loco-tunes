@@ -110,22 +110,28 @@ jobs:
           echo "Raw Gemini response:"
           cat /tmp/review_raw.txt
 
-          # Extract JSON from response using python (handles code blocks, multiline)
-          REVIEW_JSON=$(python3 -c "
-          import json, re, sys
+          # Write Python parser to file (avoids bash escaping issues with backticks)
+          cat > /tmp/parse_review.py << 'PYEOF'
+          import json, re
           text = open('/tmp/review_raw.txt').read()
-          # Try to find JSON in code blocks first
-          m = re.search(r'\`\`\`json?\s*\n(.*?)\n\`\`\`', text, re.DOTALL)
+          # Try code block extraction
+          m = re.search(r'```json?\s*\n(.*?)\n```', text, re.DOTALL)
           if m:
               text = m.group(1)
-          # Find the JSON object
+          # Find JSON object
           m = re.search(r'\{.*\}', text, re.DOTALL)
           if m:
-              obj = json.loads(m.group())
-              print(json.dumps(obj))
+              try:
+                  obj = json.loads(m.group())
+                  print(json.dumps(obj))
+              except json.JSONDecodeError:
+                  print(json.dumps({"decision": "ESCALATE", "summary": "JSON decode error", "issues": [], "risk_level": "unknown"}))
           else:
-              print(json.dumps({'decision': 'ESCALATE', 'summary': 'Could not parse JSON', 'issues': [], 'risk_level': 'unknown'}))
-          " 2>/dev/null || echo '{"decision":"ESCALATE","summary":"JSON parse failed","issues":[],"risk_level":"unknown"}')
+              print(json.dumps({"decision": "ESCALATE", "summary": "No JSON found in response", "issues": [], "risk_level": "unknown"}))
+          PYEOF
+
+          REVIEW_JSON=$(python3 /tmp/parse_review.py 2>&1)
+          echo "Parsed review JSON: $REVIEW_JSON"
 
           DECISION=$(echo "$REVIEW_JSON" | jq -r '.decision // "ESCALATE"')
           SUMMARY=$(echo "$REVIEW_JSON" | jq -r '.summary // "Review parsing failed"')
