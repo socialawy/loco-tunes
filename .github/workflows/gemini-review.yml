@@ -79,15 +79,17 @@ jobs:
             exit 0
           fi
 
-          # With responseMimeType=application/json, response is pure JSON — parse directly
-          REVIEW_JSON=$(jq -r '.candidates[0].content.parts[0].text // "{}"' /tmp/gemini_response.json)
-          echo "Review JSON: $REVIEW_JSON"
+          # Extract review JSON to file (never store JSON in bash variables)
+          jq -r '.candidates[0].content.parts[0].text // "{}"' /tmp/gemini_response.json > /tmp/review.json
+          echo "Review JSON:"
+          cat /tmp/review.json
 
-          DECISION=$(echo "$REVIEW_JSON" | jq -r '.decision // "ESCALATE"')
-          SUMMARY=$(echo "$REVIEW_JSON" | jq -r '.summary // "Review parsing failed"')
-          RISK=$(echo "$REVIEW_JSON" | jq -r '.risk_level // "unknown"')
-          ISSUES=$(echo "$REVIEW_JSON" | jq -r 'if .issues and (.issues | length > 0) then (.issues | map("- " + .) | join("\n")) else "" end')
-          ESCALATION=$(echo "$REVIEW_JSON" | jq -r '.escalation_reason // ""')
+          # Parse fields directly from file
+          DECISION=$(jq -r '.decision // "ESCALATE"' /tmp/review.json)
+          SUMMARY=$(jq -r '.summary // "Review parsing failed"' /tmp/review.json)
+          RISK=$(jq -r '.risk_level // "unknown"' /tmp/review.json)
+          ISSUES=$(jq -r 'if .issues and (.issues | length > 0) then (.issues | map("- " + .) | join("\n")) else "" end' /tmp/review.json)
+          ESCALATION=$(jq -r '.escalation_reason // ""' /tmp/review.json)
 
           echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
 
