@@ -91,10 +91,10 @@ jobs:
             exit 0
           fi
 
-          # Extract the text response
-          REVIEW_TEXT=$(jq -r '.candidates[0].content.parts[0].text // "ERROR"' /tmp/gemini_response.json)
+          # Extract text response directly to file (avoids bash mangling backticks)
+          jq -r '.candidates[0].content.parts[0].text // "ERROR"' /tmp/gemini_response.json > /tmp/review_raw.txt
 
-          if [ "$REVIEW_TEXT" = "ERROR" ] || [ -z "$REVIEW_TEXT" ]; then
+          if [ "$(head -1 /tmp/review_raw.txt)" = "ERROR" ] && [ "$(wc -l < /tmp/review_raw.txt)" -le 1 ]; then
             echo "Could not extract review text from response"
             cat /tmp/gemini_response.json
             echo "decision=ESCALATE" >> "$GITHUB_OUTPUT"
@@ -103,15 +103,12 @@ jobs:
           Could not parse Gemini response. Manual review required.
 
           ---
-          *Automated review by Gemini 2.0 Flash*" > /tmp/review_comment.txt
+          *Automated review by Gemini 2.5 Flash*" > /tmp/review_comment.txt
             exit 0
           fi
 
-          echo "Raw Gemini response text:"
-          echo "$REVIEW_TEXT"
-
-          # Save response to file for reliable parsing
-          echo "$REVIEW_TEXT" > /tmp/review_raw.txt
+          echo "Raw Gemini response:"
+          cat /tmp/review_raw.txt
 
           # Extract JSON from response using python (handles code blocks, multiline)
           REVIEW_JSON=$(python3 -c "
