@@ -23,7 +23,6 @@ jobs:
       - name: Get PR diff
         run: |
           gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr_diff.txt
-          # Truncate if too large for Gemini context
           head -c 30000 /tmp/pr_diff.txt > /tmp/pr_diff_trimmed.txt
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -31,46 +30,42 @@ jobs:
       - name: Gemini Review
         id: review
         run: |
-          # Get PR body
           PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body' || echo "No description")
 
-          # Build prompt as a file to avoid shell escaping issues
           cat > /tmp/prompt.txt <<PROMPTEOF
-          You are a code reviewer for the loco-tunes project — a Next.js music generation app.
-          Review this PR and respond with EXACTLY one JSON object (no markdown, no explanation outside JSON):
+          You are a code reviewer for the loco-tunes project (Next.js music generation app).
+          Review this PR. Return a JSON object with these exact keys:
+          decision (APPROVE, REQUEST_CHANGES, or ESCALATE),
+          summary (1-2 sentences),
+          issues (array of strings, empty if none),
+          risk_level (low, medium, or high),
+          escalation_reason (string, empty if not escalating).
 
-          {
-            "decision": "APPROVE or REQUEST_CHANGES or ESCALATE",
-            "summary": "1-2 sentence summary of what this PR does",
-            "issues": ["list of specific issues found, empty array if none"],
-            "risk_level": "low or medium or high",
-            "escalation_reason": "only if decision is ESCALATE"
-          }
+          APPROVE: Clean code, no security issues, low-medium risk.
+          REQUEST_CHANGES: Fixable issues (type errors, missing tests, logic bugs).
+          ESCALATE: Architecture changes, security concerns, high risk.
+          Dependabot PRs: APPROVE if only version bumps.
 
-          Decision criteria:
-          - APPROVE: Clean code, no security issues, low-medium risk
-          - REQUEST_CHANGES: Has fixable issues (type errors, missing tests, logic bugs)
-          - ESCALATE: Architecture changes, security concerns, unclear intent, high risk
+          PR: ${{ github.event.pull_request.title }}
+          Author: ${{ github.event.pull_request.user.login }}
+          Changed: ${{ github.event.pull_request.changed_files }} files (+${{ github.event.pull_request.additions }} -${{ github.event.pull_request.deletions }})
+          Description: ${PR_BODY}
 
-          Dependabot PRs: APPROVE if only lockfile + package.json version bumps.
-
-          PR Title: ${{ github.event.pull_request.title }}
-          PR Author: ${{ github.event.pull_request.user.login }}
-          Files Changed: ${{ github.event.pull_request.changed_files }} (+${{ github.event.pull_request.additions }} -${{ github.event.pull_request.deletions }})
-          PR Description: ${PR_BODY}
-
-          Diff (may be truncated):
+          Diff:
           PROMPTEOF
 
           cat /tmp/pr_diff_trimmed.txt >> /tmp/prompt.txt
 
-          # Build JSON payload using jq with file input (safe from shell escaping)
+          # Build payload with responseMimeType to force pure JSON (no code blocks)
           jq -n --rawfile prompt /tmp/prompt.txt '{
             "contents": [{"parts": [{"text": $prompt}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1024}
+            "generationConfig": {
+              "temperature": 0.1,
+              "maxOutputTokens": 1024,
+              "responseMimeType": "application/json"
+            }
           }' > /tmp/payload.json
 
-          # Call Gemini API
           HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/gemini_response.json \
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}" \
             -H 'Content-Type: application/json' \
@@ -79,91 +74,43 @@ jobs:
           echo "Gemini API HTTP status: $HTTP_CODE"
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "API error (HTTP $HTTP_CODE):"
-            cat /tmp/gemini_response.json
             echo "decision=ESCALATE" >> "$GITHUB_OUTPUT"
-            echo "⚠️ **Gemini Review: ESCALATE**
-
-          Gemini API returned HTTP $HTTP_CODE. Manual review required.
-
-          ---
-          *Automated review by Gemini 2.0 Flash*" > /tmp/review_comment.txt
+            echo "⚠️ **Gemini Review: ESCALATE** — API error (HTTP $HTTP_CODE)" > /tmp/review_comment.txt
             exit 0
           fi
 
-          # Extract text response directly to file (avoids bash mangling backticks)
-          jq -r '.candidates[0].content.parts[0].text // "ERROR"' /tmp/gemini_response.json > /tmp/review_raw.txt
-
-          if [ "$(head -1 /tmp/review_raw.txt)" = "ERROR" ] && [ "$(wc -l < /tmp/review_raw.txt)" -le 1 ]; then
-            echo "Could not extract review text from response"
-            cat /tmp/gemini_response.json
-            echo "decision=ESCALATE" >> "$GITHUB_OUTPUT"
-            echo "⚠️ **Gemini Review: ESCALATE**
-
-          Could not parse Gemini response. Manual review required.
-
-          ---
-          *Automated review by Gemini 2.5 Flash*" > /tmp/review_comment.txt
-            exit 0
-          fi
-
-          echo "Raw Gemini response:"
-          cat /tmp/review_raw.txt
-
-          # Write Python parser to file (avoids bash escaping issues with backticks)
-          cat > /tmp/parse_review.py << 'PYEOF'
-import json, re
-text = open('/tmp/review_raw.txt').read()
-m = re.search(r'```json?\s*\n(.*?)\n```', text, re.DOTALL)
-if m:
-    text = m.group(1)
-m = re.search(r'\{.*\}', text, re.DOTALL)
-if m:
-    try:
-        obj = json.loads(m.group())
-        print(json.dumps(obj))
-    except json.JSONDecodeError:
-        print(json.dumps({"decision": "ESCALATE", "summary": "JSON decode error", "issues": [], "risk_level": "unknown"}))
-else:
-    print(json.dumps({"decision": "ESCALATE", "summary": "No JSON found", "issues": [], "risk_level": "unknown"}))
-PYEOF
-
-          REVIEW_JSON=$(python3 /tmp/parse_review.py 2>&1)
-          echo "Parsed review JSON: $REVIEW_JSON"
+          # With responseMimeType=application/json, response is pure JSON — parse directly
+          REVIEW_JSON=$(jq -r '.candidates[0].content.parts[0].text // "{}"' /tmp/gemini_response.json)
+          echo "Review JSON: $REVIEW_JSON"
 
           DECISION=$(echo "$REVIEW_JSON" | jq -r '.decision // "ESCALATE"')
           SUMMARY=$(echo "$REVIEW_JSON" | jq -r '.summary // "Review parsing failed"')
           RISK=$(echo "$REVIEW_JSON" | jq -r '.risk_level // "unknown"')
-          ISSUES=$(echo "$REVIEW_JSON" | jq -r 'if .issues then (.issues | join("\n- ")) else "" end')
+          ISSUES=$(echo "$REVIEW_JSON" | jq -r 'if .issues and (.issues | length > 0) then (.issues | map("- " + .) | join("\n")) else "" end')
           ESCALATION=$(echo "$REVIEW_JSON" | jq -r '.escalation_reason // ""')
 
           echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
 
-          # Build comment
-          if [ "$DECISION" = "APPROVE" ]; then
-            ICON="✅"
-          elif [ "$DECISION" = "REQUEST_CHANGES" ]; then
-            ICON="🔧"
-          else
-            ICON="⚠️"
-          fi
+          if [ "$DECISION" = "APPROVE" ]; then ICON="✅";
+          elif [ "$DECISION" = "REQUEST_CHANGES" ]; then ICON="🔧";
+          else ICON="⚠️"; fi
 
           {
             echo "${ICON} **Gemini Review: ${DECISION}** (Risk: ${RISK})"
             echo ""
             echo "${SUMMARY}"
-            if [ -n "$ISSUES" ] && [ "$ISSUES" != "" ]; then
+            if [ -n "$ISSUES" ]; then
               echo ""
               echo "**Issues:**"
-              echo "- ${ISSUES}"
+              echo "${ISSUES}"
             fi
-            if [ -n "$ESCALATION" ] && [ "$ESCALATION" != "null" ] && [ "$ESCALATION" != "" ]; then
+            if [ -n "$ESCALATION" ] && [ "$ESCALATION" != "null" ]; then
               echo ""
               echo "**Escalation reason:** ${ESCALATION}"
             fi
             echo ""
             echo "---"
-            echo "*Automated review by Gemini 2.0 Flash*"
+            echo "*Automated review by Gemini 2.5 Flash*"
           } > /tmp/review_comment.txt
 
         env:
@@ -171,8 +118,7 @@ PYEOF
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Post review comment
-        run: |
-          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/review_comment.txt
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/review_comment.txt
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -186,8 +132,7 @@ PYEOF
 
       - name: Request changes if needed
         if: steps.review.outputs.decision == 'REQUEST_CHANGES'
-        run: |
-          gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Changes requested by Gemini review — see comment above"
+        run: gh pr review ${{ github.event.pull_request.number }} --request-changes --body "Changes requested by Gemini review — see comment above"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
