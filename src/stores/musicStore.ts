@@ -14,6 +14,8 @@ import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
+import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
+import type { Project } from '@/types/music';
 
 interface MusicStore {
   // Generation params
@@ -32,6 +34,10 @@ interface MusicStore {
   // Hardware
   hardwareTier: HardwareTier;
   
+  // Projects
+  projects: Project[];
+  currentProjectId: string | null;
+
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
@@ -54,12 +60,25 @@ interface MusicStore {
   setMode: (mode: 'simple' | 'advanced') => void;
   updateCurrentTime: (time: number) => void;
   restartPlayback: () => void;
+
+  // Project Actions
+  fetchProjects: () => Promise<void>;
+  saveCurrentProject: () => Promise<void>;
+  loadProjectData: (id: string) => Promise<void>;
+  deleteProjectData: (id: string) => Promise<void>;
+  createNewProject: (name: string) => Promise<void>;
 }
+
+// Variables for auto-save debounce
+let autoSaveTimeout: NodeJS.Timeout | null = null;
+const AUTO_SAVE_INTERVAL = 10000; // 10 seconds
 
 export const useMusicStore = create<MusicStore>((set, get) => ({
   // Initial state
   params: DEFAULT_PARAMS,
   currentTrack: null,
+  projects: [],
+  currentProjectId: null,
   isPlaying: false,
   currentTime: 0,
   effects: DEFAULT_EFFECTS,
@@ -101,6 +120,13 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       
       toast.success('Track generated successfully!');
       
+      // Auto-save the project if there is one, or create one if none exists
+      if (!get().currentProjectId) {
+         get().createNewProject(`Generated Track - ${new Date().toLocaleTimeString()}`);
+      } else {
+         get().saveCurrentProject();
+      }
+
       // Auto-play after generation
       setTimeout(() => get().playTrack(), 100);
       
@@ -222,6 +248,12 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     // Update engine
     const engine = getAudioEngine();
     engine.setStemVolume(stemType, volume);
+
+    // Trigger auto-save
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+      get().saveCurrentProject();
+    }, AUTO_SAVE_INTERVAL);
   },
   
   // Toggle stem mute
@@ -245,6 +277,12 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     
     const engine = getAudioEngine();
     engine.setStemMute(stemType, newMuted, stem.volume);
+
+    // Trigger auto-save
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+      get().saveCurrentProject();
+    }, AUTO_SAVE_INTERVAL);
   },
   
   // Toggle stem solo
@@ -283,6 +321,12 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     
     const engine = getAudioEngine();
     engine.setEffects(get().effects);
+
+    // Trigger auto-save
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+      get().saveCurrentProject();
+    }, AUTO_SAVE_INTERVAL);
   },
   
   // Export to WAV
@@ -336,4 +380,141 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
+
+  // --- Project Actions ---
+
+  fetchProjects: async () => {
+    try {
+      const projects = await getProjects();
+      set({ projects });
+    } catch (err) {
+      console.error('Failed to fetch projects:', err);
+    }
+  },
+
+  saveCurrentProject: async () => {
+    const { currentTrack, currentProjectId, effects, projects } = get();
+    if (!currentTrack || !currentProjectId) return;
+
+    try {
+      // Find the current project to keep its original name and creation date
+      const existingProject = projects.find(p => p.id === currentProjectId);
+
+      const projectData: Project = {
+        id: currentProjectId,
+        name: existingProject?.name || `Project ${currentProjectId}`,
+        track: currentTrack,
+        effects: effects,
+        createdAt: existingProject?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await saveProject(projectData);
+
+      // Update projects list
+      await get().fetchProjects();
+    } catch (err) {
+      console.error('Auto-save failed:', err);
+    }
+  },
+
+  createNewProject: async (name: string) => {
+    const { currentTrack, effects } = get();
+    if (!currentTrack) return;
+
+    const projectId = crypto.randomUUID();
+
+    const newProject: Project = {
+      id: projectId,
+      name,
+      track: currentTrack,
+      effects,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await saveProject(newProject);
+      set({ currentProjectId: projectId });
+      await get().fetchProjects();
+      toast.success('Project saved!');
+    } catch (err) {
+      console.error('Failed to create project:', err);
+      toast.error('Failed to save project');
+    }
+  },
+
+  loadProjectData: async (id: string) => {
+    try {
+      const project = await loadProject(id);
+      if (!project) throw new Error('Project not found');
+
+      set({ isGenerating: true, generationProgress: 0 });
+
+      // When loading a track from IndexedDB/JSON, its audioBuffers are gone.
+      // We must regenerate the audio buffers from the stored notes
+      const engine = getAudioEngine();
+
+      // Show loading progress
+      set({ generationProgress: 20 });
+
+      const restoredStems = await Promise.all(
+        project.track.stems.map(async (stem) => {
+          // Re-render notes into a new audio buffer
+          const audioBuffer = await engine.renderNotesToBufferAsync(
+            stem.notes,
+            project.track.duration,
+            stem.type,
+            stem.synthParams
+          );
+
+          return {
+            ...stem,
+            audioBuffer
+          };
+        })
+      );
+
+      const restoredTrack: Track = {
+        ...project.track,
+        stems: restoredStems
+      };
+
+      set({
+        currentTrack: restoredTrack,
+        params: project.track.params,
+        effects: project.effects,
+        currentProjectId: project.id,
+        isGenerating: false,
+        generationProgress: 100
+      });
+
+      // Also apply loaded effects to engine
+      engine.setEffects(project.effects);
+
+      toast.success(`Loaded project: ${project.name}`);
+
+    } catch (err) {
+      console.error('Failed to load project:', err);
+      toast.error('Failed to load project');
+      set({ isGenerating: false });
+    }
+  },
+
+  deleteProjectData: async (id: string) => {
+    try {
+      await deleteProject(id);
+
+      const { currentProjectId } = get();
+      if (currentProjectId === id) {
+        set({ currentProjectId: null });
+      }
+
+      await get().fetchProjects();
+      toast.success('Project deleted');
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+      toast.error('Failed to delete project');
+    }
+  },
 }));
