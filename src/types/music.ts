@@ -44,6 +44,15 @@ export interface Track {
   createdAt: Date;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  track: Track;
+  effects: EffectSettings;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface EffectSettings {
   reverb: {
     enabled: boolean;
