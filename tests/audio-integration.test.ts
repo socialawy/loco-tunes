@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateTrack, validateParams } from '@/lib/audio/generator';
+import { generateTrack, generateStemVariation, validateParams } from '@/lib/audio/generator';
 import type { GenerationParams, Track } from '@/types/music';
 
 // Mock audio engine completely for integration test so we don't need real AudioContext
@@ -119,6 +119,22 @@ describe('Audio Integration: Full Generation Pipeline', () => {
     it('should generate track with complexity 1', async () => {
       const track = await generateTrack({ ...baseParams, complexity: 1 });
       expect(track.params.complexity).toBe(1);
+    });
+  });
+
+  describe('Stem Variation', () => {
+    it('should generate a valid stem variation', async () => {
+      const track = await generateTrack({ ...baseParams, genre: 'electronic' });
+      const initialStem = track.stems[0]; // Drums stem
+
+      const variedStem = await generateStemVariation(initialStem, track.params);
+
+      // Verify the varied stem maintains base properties
+      expect(variedStem.type).toBe(initialStem.type);
+
+      // Notes and audio buffer should exist
+      expect(Array.isArray(variedStem.notes)).toBe(true);
+      expect(variedStem.audioBuffer).toBeDefined();
     });
   });
 });
