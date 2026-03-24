@@ -107,6 +107,7 @@ export interface MusicState {
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
   generateTrack: () => Promise<void>;
+  generateStemVariation: (stemType: StemType) => Promise<void>;
   playTrack: () => void;
   pauseTrack: () => void;
   stopTrack: () => void;

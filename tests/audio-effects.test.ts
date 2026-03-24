@@ -76,8 +76,8 @@ describe('Audio Effects Generator', () => {
       expect(mockContext.createGain).toHaveBeenCalledTimes(3); // feedback, wet, dry
 
       // Checking connection methods
-      expect(input.gain.value).toBeDefined();
-      expect(output.gain.value).toBeDefined();
+      expect((input as any).gain.value).toBeDefined();
+      expect((output as any).gain.value).toBeDefined();
     });
   });
 

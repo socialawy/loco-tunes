@@ -74,7 +74,7 @@ describe('Audio Export Utilities', () => {
   describe('exportStemToWav', () => {
     it('should export a stem with audio buffer to WAV', () => {
       const stem: Stem = {
-        id: '1',
+        color: '#ff0000',
         type: 'melody',
         notes: [],
         volume: 1,
@@ -91,7 +91,7 @@ describe('Audio Export Utilities', () => {
 
     it('should return null if stem has no audio buffer', () => {
       const stem: Stem = {
-        id: '1',
+        color: '#ff0000',
         type: 'melody',
         notes: [],
         volume: 1,
@@ -108,12 +108,12 @@ describe('Audio Export Utilities', () => {
     it('should export a track to mixed WAV', () => {
       const track: Track = {
         id: 'track1',
-        title: 'Test',
-        params: { genre: 'electronic', mood: 'happy', bpm: 120, scale: 'major', complexity: 0.5, duration: 30 } as GenerationParams,
+        name: 'Test',
+        params: { prompt: '', key: 'C', genre: 'electronic', mood: 'happy', bpm: 120, scale: 'major', complexity: 0.5, duration: 30 } as GenerationParams,
         duration: 2.0, // short duration for test
         stems: [
           {
-            id: '1',
+            color: '#ff0000',
             type: 'melody',
             notes: [],
             volume: 1,
@@ -122,7 +122,7 @@ describe('Audio Export Utilities', () => {
             audioBuffer: mockAudioBuffer as AudioBuffer
           }
         ],
-        createdAt: Date.now()
+        createdAt: new Date()
       };
 
       const volumes = { melody: 1, drums: 1, bass: 1, harmony: 1 };
@@ -136,12 +136,12 @@ describe('Audio Export Utilities', () => {
     it('should handle missing audio buffers gracefully', () => {
       const track: Track = {
         id: 'track1',
-        title: 'Test',
+        name: 'Test',
         params: {} as GenerationParams,
         duration: 2.0,
         stems: [
           {
-            id: '1',
+            color: '#ff0000',
             type: 'melody',
             notes: [],
             volume: 1,
@@ -149,7 +149,7 @@ describe('Audio Export Utilities', () => {
             solo: false
           }
         ],
-        createdAt: Date.now()
+        createdAt: new Date()
       };
 
       const volumes = { melody: 1, drums: 1, bass: 1, harmony: 1 };
@@ -167,7 +167,7 @@ describe('Audio Export Utilities', () => {
       ];
 
       const stem: Stem = {
-        id: '1',
+        color: '#ff0000',
         type: 'melody',
         notes,
         volume: 1,
@@ -195,12 +195,12 @@ describe('Audio Export Utilities', () => {
     it('should export track with multiple stems to MIDI', () => {
       const track: Track = {
         id: 'track1',
-        title: 'Test',
+        name: 'Test',
         params: { bpm: 120 } as GenerationParams,
         duration: 30,
         stems: [
           {
-            id: '1',
+            color: '#ff0000',
             type: 'melody',
             notes: [{ pitch: 60, velocity: 100, startTime: 0, duration: 1 }],
             volume: 1,
@@ -208,7 +208,7 @@ describe('Audio Export Utilities', () => {
             solo: false
           },
           {
-            id: '2',
+            color: '#00ff00',
             type: 'drums',
             notes: [{ pitch: 36, velocity: 127, startTime: 0, duration: 0.5 }],
             volume: 1,
@@ -216,7 +216,7 @@ describe('Audio Export Utilities', () => {
             solo: false
           }
         ],
-        createdAt: Date.now()
+        createdAt: new Date()
       };
 
       const blob = exportTrackToMidi(track);

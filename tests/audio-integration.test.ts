@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateTrack, validateParams } from '@/lib/audio/generator';
+import { generateTrack, validateParams, generateStemVariation, regenerateStem } from '@/lib/audio/generator';
 import type { GenerationParams, Track } from '@/types/music';
 
 // Mock audio engine completely for integration test so we don't need real AudioContext
@@ -35,6 +35,8 @@ vi.mock('@/lib/audio/engine', async (importOriginal) => {
 
 describe('Audio Integration: Full Generation Pipeline', () => {
   const baseParams: GenerationParams = {
+    prompt: '',
+    key: 'C',
     genre: 'electronic',
     mood: 'happy',
     bpm: 120,
@@ -61,6 +63,37 @@ describe('Audio Integration: Full Generation Pipeline', () => {
     it('should pass with missing optional fields', () => {
       const errors = validateParams({});
       expect(errors).toEqual([]);
+    });
+  });
+
+  describe('Stem Variation & Regeneration', () => {
+    it('should generate a stem variation with same type and valid structure', async () => {
+      const track = await generateTrack(baseParams);
+      const originalStem = track.stems[0]; // e.g., drums
+
+      const variedStem = await generateStemVariation(originalStem, baseParams);
+
+      expect(variedStem.type).toBe(originalStem.type);
+      expect(Array.isArray(variedStem.notes)).toBe(true);
+      // Volume, solo, mute settings should be preserved
+      expect(variedStem.volume).toBe(originalStem.volume);
+      expect(variedStem.muted).toBe(originalStem.muted);
+      expect(variedStem.solo).toBe(originalStem.solo);
+    });
+
+    it('should regenerate a single stem', async () => {
+      const track = await generateTrack(baseParams);
+      const originalStem = track.stems.find(s => s.type === 'melody');
+      expect(originalStem).toBeDefined();
+
+      const newStem = await regenerateStem(track, 'melody');
+
+      expect(newStem.type).toBe('melody');
+      expect(Array.isArray(newStem.notes)).toBe(true);
+      // Volume, solo, mute settings should be preserved
+      expect(newStem.volume).toBe(originalStem!.volume);
+      expect(newStem.muted).toBe(originalStem!.muted);
+      expect(newStem.solo).toBe(originalStem!.solo);
     });
   });
 
