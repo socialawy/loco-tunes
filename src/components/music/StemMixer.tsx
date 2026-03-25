@@ -6,7 +6,7 @@ import { Slider } from '@/components/ui/slider';
 import { useMusicStore } from '@/stores/musicStore';
 import type { StemType } from '@/types/music';
 import { STEM_COLORS } from '@/types/music';
-import { Volume2, VolumeX, RefreshCw, Headphones } from 'lucide-react';
+import { Volume2, VolumeX, RefreshCw, Headphones, Wand2 } from 'lucide-react';
 
 const STEM_LABELS: Record<StemType, string> = {
   drums: 'Drums',
@@ -29,6 +29,7 @@ export function StemMixer() {
     toggleStemMute, 
     toggleStemSolo,
     regenerateStem,
+    generateStemVariation,
     isGenerating,
   } = useMusicStore();
   
@@ -76,6 +77,18 @@ export function StemMixer() {
                 
                 {/* Control Buttons */}
                 <div className="flex items-center gap-1">
+                  {/* Variation Button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => generateStemVariation(stem.type)}
+                    disabled={isGenerating}
+                    className="h-8 w-8 text-gray-400 hover:text-white hover:bg-[#2a2a4e]"
+                    title="Generate variation"
+                  >
+                    <Wand2 className="h-4 w-4" />
+                  </Button>
+
                   {/* Regenerate Button */}
                   <Button
                     variant="ghost"

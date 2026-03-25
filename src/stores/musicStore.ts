@@ -48,6 +48,7 @@ interface MusicStore {
   setParams: (params: Partial<GenerationParams>) => void;
   generateTrack: () => Promise<void>;
   regenerateStem: (stemType: StemType) => Promise<void>;
+  generateStemVariation: (stemType: StemType) => Promise<void>;
   playTrack: () => void;
   pauseTrack: () => void;
   stopTrack: () => void;
@@ -170,6 +171,42 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     }
   },
   
+  // Generate a variation of a single stem
+  generateStemVariation: async (stemType: StemType) => {
+    const { currentTrack, params } = get();
+    if (!currentTrack) return;
+
+    const existingStem = currentTrack.stems.find(s => s.type === stemType);
+    if (!existingStem) return;
+
+    set({ isGenerating: true });
+
+    try {
+      const newStem = await generateStemVariation(existingStem, params);
+
+      set((state) => ({
+        currentTrack: state.currentTrack ? {
+          ...state.currentTrack,
+          stems: state.currentTrack.stems.map(s =>
+            s.type === stemType ? newStem : s
+          ),
+        } : null,
+        isGenerating: false,
+      }));
+
+      toast.success(`${stemType} stem variation generated`);
+
+      // Restart playback if playing to hear changes
+      if (get().isPlaying) {
+        get().restartPlayback();
+      }
+    } catch (error) {
+      console.error('Stem variation failed:', error);
+      toast.error(`Failed to generate ${stemType} stem variation`);
+      set({ isGenerating: false });
+    }
+  },
+
   // Restart playback at current time (used when mixer controls change)
   restartPlayback: () => {
     const { isPlaying } = get();

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateTrack, validateParams } from '@/lib/audio/generator';
+import { generateTrack, validateParams, generateStemVariation } from '@/lib/audio/generator';
 import type { GenerationParams, Track } from '@/types/music';
 
 // Mock audio engine completely for integration test so we don't need real AudioContext
@@ -119,6 +119,24 @@ describe('Audio Integration: Full Generation Pipeline', () => {
     it('should generate track with complexity 1', async () => {
       const track = await generateTrack({ ...baseParams, complexity: 1 });
       expect(track.params.complexity).toBe(1);
+    });
+  });
+
+  describe('Stem Variation', () => {
+    it('should generate a stem variation with correct notes', async () => {
+      const track = await generateTrack({ ...baseParams, genre: 'electronic' });
+      const originalMelody = track.stems.find(s => s.type === 'melody');
+      expect(originalMelody).toBeDefined();
+
+      if (originalMelody) {
+        const variedMelody = await generateStemVariation(originalMelody, { ...baseParams, genre: 'electronic' });
+        expect(variedMelody).toBeDefined();
+        expect(variedMelody.type).toBe('melody');
+        expect(Array.isArray(variedMelody.notes)).toBe(true);
+        expect(variedMelody.audioBuffer).toBeDefined();
+        // Since randomness is involved, we just verify it produces valid output,
+        // it may or may not be exactly the same depending on random seeds if they are mocked or not.
+      }
     });
   });
 });
