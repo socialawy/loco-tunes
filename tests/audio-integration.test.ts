@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateTrack, validateParams } from '@/lib/audio/generator';
+import { generateTrack, regenerateStem, generateStemVariation, validateParams } from '@/lib/audio/generator';
 import type { GenerationParams, Track } from '@/types/music';
 
 // Mock audio engine completely for integration test so we don't need real AudioContext
@@ -35,8 +35,10 @@ vi.mock('@/lib/audio/engine', async (importOriginal) => {
 
 describe('Audio Integration: Full Generation Pipeline', () => {
   const baseParams: GenerationParams = {
+    prompt: '',
     genre: 'electronic',
     mood: 'happy',
+    key: 'C',
     bpm: 120,
     scale: 'major',
     complexity: 0.5,
@@ -119,6 +121,32 @@ describe('Audio Integration: Full Generation Pipeline', () => {
     it('should generate track with complexity 1', async () => {
       const track = await generateTrack({ ...baseParams, complexity: 1 });
       expect(track.params.complexity).toBe(1);
+    });
+  });
+
+  describe('Stem Manipulation', () => {
+    it('should regenerate a specific stem', async () => {
+      const track = await generateTrack(baseParams);
+      const originalDrums = track.stems.find(s => s.type === 'drums');
+      expect(originalDrums).toBeDefined();
+
+      const newDrums = await regenerateStem(track, 'drums');
+      expect(newDrums).toBeDefined();
+      expect(newDrums.type).toBe('drums');
+      expect(newDrums.notes).toBeDefined();
+    });
+
+    it('should generate a variation of a specific stem', async () => {
+      const track = await generateTrack(baseParams);
+      const originalMelody = track.stems.find(s => s.type === 'melody');
+      expect(originalMelody).toBeDefined();
+
+      if (!originalMelody) return;
+
+      const newMelody = await generateStemVariation(originalMelody, baseParams);
+      expect(newMelody).toBeDefined();
+      expect(newMelody.type).toBe('melody');
+      expect(newMelody.notes).toBeDefined();
     });
   });
 });
