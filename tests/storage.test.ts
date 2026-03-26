@@ -48,6 +48,7 @@ describe('Storage Utilities', () => {
     id: 'track1',
     name: 'My Track',
     params: {
+      prompt: '',
       genre: 'electronic',
       bpm: 120,
       mood: 'happy',
