@@ -192,12 +192,15 @@ function notesToMidiEvents(notes: Note[], bpm: number, channel: number = 0): Mid
     const startTick = Math.round(note.startTime * ticksPerSecond);
     const endTick = Math.round((note.startTime + note.duration) * ticksPerSecond);
     
+    const pitch = Math.max(0, Math.min(127, Math.round(note.pitch)));
+    const velocity = Math.max(0, Math.min(127, Math.round(note.velocity)));
+
     // Note on
     timedEvents.push({
       tick: startTick,
       status: 0x90 | channel,
-      velocity: Math.round(note.velocity),
-      pitch: note.pitch,
+      velocity,
+      pitch,
     });
     
     // Note off
@@ -205,12 +208,16 @@ function notesToMidiEvents(notes: Note[], bpm: number, channel: number = 0): Mid
       tick: endTick,
       status: 0x80 | channel,
       velocity: 0,
-      pitch: note.pitch,
+      pitch,
     });
   }
   
-  // Sort by tick
-  timedEvents.sort((a, b) => a.tick - b.tick);
+  // Sort by tick, and if ticks match, sort Note Off before Note On
+  timedEvents.sort((a, b) => {
+    if (a.tick !== b.tick) return a.tick - b.tick;
+    // status 0x80 (Note Off) < 0x90 (Note On)
+    return a.status - b.status;
+  });
   
   // Convert to delta times
   let lastTick = 0;
@@ -241,8 +248,14 @@ export function exportStemToMidi(stem: Stem, bpm: number): Blob {
   
   const channel = stem.type === 'drums' ? 9 : 0; // Channel 10 for drums
   
-  // Create track with program change
+  // Track name meta event
+  const trackName = stem.type.charAt(0).toUpperCase() + stem.type.slice(1);
+  const nameBytes = Array.from(trackName).map(c => c.charCodeAt(0));
+
+  // Create track with tempo, track name, and program change
   const trackEvents: MidiEvent[] = [
+    { deltaTime: 0, status: 0xFF, data: [0x51, 0x03, ...microsecondsPerBeat(bpm)] },
+    { deltaTime: 0, status: 0xFF, data: [0x03, nameBytes.length, ...nameBytes] },
     { deltaTime: 0, status: 0xC0 | channel, data: [programChanges[stem.type]] },
     ...events,
   ];
@@ -261,8 +274,19 @@ export function exportStemToMidi(stem: Stem, bpm: number): Blob {
 export function exportTrackToMidi(track: Track): Blob {
   const { bpm } = track.params;
   
-  // Create one track per stem
+  // Create one track per stem, plus a tempo track
   const tracks: Uint8Array[] = [];
+
+  // Tempo track (Track 0)
+  const tempoEvents: MidiEvent[] = [
+    {
+      deltaTime: 0,
+      status: 0xFF,
+      data: [0x51, 0x03, ...microsecondsPerBeat(bpm)],
+    }
+  ];
+  tracks.push(createMidiTrack(tempoEvents));
+
   const stemChannels: Record<StemType, number> = {
     drums: 9,
     bass: 0,
@@ -279,13 +303,14 @@ export function exportTrackToMidi(track: Track): Blob {
   
   for (const stem of track.stems) {
     const channel = stemChannels[stem.type];
+
+    // Track name meta event
+    const trackName = stem.type.charAt(0).toUpperCase() + stem.type.slice(1);
+    const nameBytes = Array.from(trackName).map(c => c.charCodeAt(0));
+
     const events: MidiEvent[] = [
-      // Tempo meta event (only on first track)
-      ...(stem.type === 'drums' ? [{
-        deltaTime: 0,
-        status: 0xFF,
-        data: [0x51, 0x03, ...microsecondsPerBeat(bpm)],
-      }] : []),
+      // Track name
+      { deltaTime: 0, status: 0xFF, data: [0x03, nameBytes.length, ...nameBytes] },
       // Program change
       { deltaTime: 0, status: 0xC0 | channel, data: [programChanges[stem.type]] },
     ];
