@@ -160,7 +160,7 @@ describe('Audio Export Utilities', () => {
   });
 
   describe('exportStemToMidi', () => {
-    it('should export stem notes to MIDI format', () => {
+    it('should export stem notes to MIDI format with tempo and track name', () => {
       const notes: Note[] = [
         { pitch: 60, velocity: 100, startTime: 0, duration: 1 },
         { pitch: 64, velocity: 80, startTime: 1, duration: 1 }
@@ -188,11 +188,16 @@ describe('Audio Export Utilities', () => {
       expect(data[1]).toBe('T'.charCodeAt(0));
       expect(data[2]).toBe('h'.charCodeAt(0));
       expect(data[3]).toBe('d'.charCodeAt(0));
+
+      // Check track count (should be 1)
+      const view = new DataView(data.buffer);
+      const trackCount = view.getUint16(10, false);
+      expect(trackCount).toBe(1);
     });
   });
 
   describe('exportTrackToMidi', () => {
-    it('should export track with multiple stems to MIDI', () => {
+    it('should export track with multiple stems to MIDI with proper track count', () => {
       const track: Track = {
         id: 'track1',
         title: 'Test',
@@ -223,6 +228,14 @@ describe('Audio Export Utilities', () => {
       expect(blob).toBeInstanceOf(Blob);
       // @ts-ignore
       expect(blob.options.type).toBe('audio/midi');
+
+      // @ts-ignore
+      const data = blob.parts[0] as Uint8Array;
+      const view = new DataView(data.buffer);
+
+      // Verify track count = 1 (Tempo Track) + 2 (Stems) = 3
+      const trackCount = view.getUint16(10, false);
+      expect(trackCount).toBe(3);
     });
   });
 
