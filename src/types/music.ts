@@ -129,12 +129,14 @@ export const SCALES: Record<string, number[]> = {
 };
 
 // Chord progressions by genre
+// Chord progressions by genre (scale degree, modifier)
+// Modifier: 0 = diatonic, 1 = force major, -1 = force minor, 5 = dominant 7th, 6 = secondary dominant (V/V)
 export const CHORD_PROGRESSIONS: Record<Genre, number[][]> = {
-  electronic: [[0, 0], [3, 0], [4, 0], [4, 5]], // I - IV - V - V/V
+  electronic: [[0, 0], [5, -1], [3, 0], [4, 0]], // vi - IV - V - I variations
   hiphop: [[0, 0], [2, -1], [3, 0], [5, 0]], // i - III - IV - VI
   ambient: [[0, 0], [0, 0], [2, 0], [3, 0]], // Sustained patterns
-  rock: [[0, 0], [4, 0], [5, 0], [4, 0]], // I - V - VI - V
-  jazz: [[0, 0], [3, 1], [4, 0], [2, 0]], // ii-V-I variations
+  rock: [[0, 0], [4, 0], [5, -1], [3, 0]], // I - V - vi - IV
+  jazz: [[1, -1], [4, 5], [0, 1], [5, 5]], // ii7 - V7 - Imaj7 - VI7 (secondary dom)
 };
 
 // Note names for MIDI conversion

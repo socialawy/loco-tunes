@@ -65,7 +65,8 @@ export function generateMelodyNotes(
   bpm: number,
   numBars: number,
   complexity: number,
-  chordRoots: number[] = []
+  chordRoots: number[] = [],
+  intensity: number = 1.0
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -85,11 +86,13 @@ export function generateMelodyNotes(
   const selectedPattern = rhythmPatterns[Math.floor(Math.random() * rhythmPatterns.length)];
   
   let currentTime = 0;
-  let currentScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
-  let barCount = 0;
+  const initialScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
+  let currentScaleIndex = initialScaleIndex;
   let noteIndex = 0;
   
-  while (currentTime < numBars * 4 * beatDuration) {
+  const totalDuration = numBars * 4 * beatDuration;
+
+  while (currentTime < totalDuration) {
     const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
     const patternIndex = noteIndex % selectedPattern.length;
     const duration = selectedPattern[patternIndex] * beatDuration;
@@ -99,39 +102,79 @@ export function generateMelodyNotes(
     
     if (shouldPlay && duration > 0) {
       // Apply contour bias to scale index movement
-      let direction = 0;
       const contourProgress = currentTime / (numBars * 4 * beatDuration);
       
+      // Determine target contour shape algorithmically
+      const globalProgress = currentTime / totalDuration;
+      let targetOffset = 0;
+
       switch (contour) {
         case 'ascending':
-          direction = Math.random() < 0.6 ? 1 : -1;
+          targetOffset = globalProgress * 14 - 7; // -7 to +7 scale degrees
           break;
         case 'descending':
-          direction = Math.random() < 0.6 ? -1 : 1;
+          targetOffset = 7 - (globalProgress * 14);
           break;
         case 'arch':
-          direction = contourProgress < 0.5 ? 1 : -1;
+          targetOffset = Math.sin(globalProgress * Math.PI) * 7;
           break;
         case 'valley':
-          direction = contourProgress < 0.5 ? -1 : 1;
+          targetOffset = -Math.sin(globalProgress * Math.PI) * 7;
           break;
         case 'wave':
-          direction = Math.sin(contourProgress * Math.PI * 4) > 0 ? 1 : -1;
+          targetOffset = Math.sin(globalProgress * Math.PI * 4) * 5;
           break;
       }
       
-      // Add randomness based on jumpiness
+      const targetScaleIndex = Math.round(initialScaleIndex + targetOffset);
+
+      // Move towards target with some randomness
+      let direction = targetScaleIndex > currentScaleIndex ? 1 : (targetScaleIndex < currentScaleIndex ? -1 : 0);
+
       if (Math.random() < jumpiness) {
-        direction *= Math.floor(Math.random() * 3) + 1; // Bigger jumps
+         direction *= Math.floor(Math.random() * 3) + 1;
+      } else if (Math.random() < 0.3) {
+         direction = -direction; // Occasional opposite step
       }
       
       currentScaleIndex = Math.max(0, Math.min(extendedScale.length - 1, currentScaleIndex + direction));
       
-      const pitch = extendedScale[currentScaleIndex];
+      let pitch = extendedScale[currentScaleIndex];
+
+      // Chord tone prioritization
+      // If it's a strong beat (e.g. downbeat), bias towards chord root
+      const barCount = Math.floor(currentTime / (4 * beatDuration));
+      const beatInBar = (currentTime % (4 * beatDuration)) / beatDuration;
+      const isStrongBeat = beatInBar % 1 === 0;
+
+      if (isStrongBeat && chordRoots.length > barCount) {
+         const currentChordRoot = chordRoots[barCount];
+         // Try to snap pitch to nearest chord root or fifth if it's far
+         const rootPitchClass = currentChordRoot % 12;
+         const fifthPitchClass = (currentChordRoot + 7) % 12;
+
+         if (pitch % 12 !== rootPitchClass && pitch % 12 !== fifthPitchClass) {
+            // Find closest chord tone in the extended scale
+            let minDiff = 100;
+            let bestPitch = pitch;
+            for(let p of extendedScale) {
+               if(p % 12 === rootPitchClass || p % 12 === fifthPitchClass) {
+                  const diff = Math.abs(p - pitch);
+                  if (diff < minDiff && diff < 12) {
+                     minDiff = diff;
+                     bestPitch = p;
+                  }
+               }
+            }
+            pitch = bestPitch;
+            // Update currentScaleIndex to match
+            currentScaleIndex = extendedScale.indexOf(pitch);
+         }
+      }
       
       // Velocity varies based on position and randomness
       const baseVelocity = genre === 'ambient' ? 60 : 80;
-      const velocity = Math.round(baseVelocity + Math.random() * 30);
+      const velocity = Math.min(127, Math.round((baseVelocity + Math.random() * 30) * intensity));
       
       notes.push({
         pitch,
