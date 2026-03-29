@@ -122,7 +122,8 @@ export function generateDrumNotes(
   bpm: number,
   numBars: number,
   beatsPerBar: number = 4,
-  stepsPerBeat: number = 2
+  stepsPerBeat: number = 2,
+  intensity: number = 1.0
 ): Note[] {
   const notes: Note[] = [];
   const pattern = DRUM_PATTERNS[genre] || DRUM_PATTERNS.electronic;
@@ -132,7 +133,7 @@ export function generateDrumNotes(
   for (let bar = 0; bar < numBars; bar++) {
     for (const hit of pattern) {
       // Add variation based on bar position
-      let velocity = hit.velocity;
+      let velocity = hit.velocity * intensity;
       const randomVariation = 0.9 + Math.random() * 0.2;
       velocity = Math.round(velocity * randomVariation);
       
@@ -144,7 +145,26 @@ export function generateDrumNotes(
         }
       }
       
-      const startTime = bar * (60 / bpm) * beatsPerBar + hit.step * stepDuration;
+      let startTime = bar * (60 / bpm) * beatsPerBar + hit.step * stepDuration;
+
+      // Swing timing for jazz
+      if (genre === 'jazz' && hit.step % 2 !== 0) {
+         // Delay off-beats by a swing ratio
+         // Normal offbeat is at 0.5 of a beat. We want it at ~0.66 of a beat
+         const swingRatio = 0.66;
+         const normalRatio = 0.5;
+         const beatDuration = 60 / bpm;
+         // The shift is (swingRatio - normalRatio) * beatDuration
+         const swingDelay = (swingRatio - normalRatio) * beatDuration;
+         startTime += swingDelay;
+      }
+
+      // Syncopation for hiphop/electronic
+      if ((genre === 'hiphop' || genre === 'electronic') && Math.random() < 0.15 && hit.step % 2 !== 0) {
+         // Randomly push early or late by up to 32nd note
+         const maxShift = (60 / bpm) / 8;
+         startTime += (Math.random() * maxShift * 2) - maxShift;
+      }
       
       notes.push({
         pitch: DRUM_MIDI[hit.drum],

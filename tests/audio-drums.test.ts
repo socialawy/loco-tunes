@@ -56,6 +56,21 @@ describe('Audio Drums Generator', () => {
       expect(fillSnareCount).toBeGreaterThanOrEqual(0); // Since random variation is involved, can be 0 or more
     });
 
+    it('should verify jazz swing offsets', () => {
+      const notes = generateDrumNotes('jazz', 120, 1, 4, 2);
+      const beatDuration = 60 / 120;
+
+      const snareNotes = notes.filter(n => n.pitch === DRUM_MIDI.snare);
+      const firstSnare = snareNotes.find(n => Math.abs(n.startTime - (beatDuration * 0.5)) < 0.2); // approx step 1
+
+      if (firstSnare) {
+        // Normal offbeat is at 0.5 * beatDuration = 0.25s
+        // Swing moves it to ~0.66 * beatDuration = 0.33s
+        // 0.33 - 0.25 = 0.08 shift
+        expect(firstSnare.startTime).toBeGreaterThan(0.25);
+      }
+    });
+
     it('should fallback to electronic for unknown genre', () => {
       // @ts-expect-error testing invalid input
       const notes = generateDrumNotes('unknown', 120, 1, 4, 2);

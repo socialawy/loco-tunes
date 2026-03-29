@@ -49,11 +49,47 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
   // Extract chord roots for melody generation
   const chordRoots = chords.map(c => c.chord[0]);
   
-  // Generate all stems
-  const drumsNotes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
-  const bassNotes = generateBassNotes(chords, beatsPerBar, bpm, genre);
-  const melodyNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
-  const harmonyNotes = generateHarmonyNotes(chords, beatsPerBar, bpm);
+  // Generate all stems with song structure awareness
+  const drumsNotes: Note[] = [];
+  const bassNotes: Note[] = [];
+  const melodyNotes: Note[] = [];
+  const harmonyNotes: Note[] = [];
+
+  // Standard structure: 12.5% Intro, 37.5% Verse, 25% Chorus, 12.5% Verse, 12.5% Outro
+  // For small bar counts (like 4 or 8), this gracefully degrades or just loops
+  const structure = [
+    { start: 0, length: Math.ceil(numBars * 0.125), type: 'intro', intensity: 0.7, compMod: -0.2 },
+    { start: Math.ceil(numBars * 0.125), length: Math.ceil(numBars * 0.375), type: 'verse1', intensity: 0.9, compMod: 0.0 },
+    { start: Math.ceil(numBars * 0.5), length: Math.ceil(numBars * 0.25), type: 'chorus', intensity: 1.2, compMod: 0.2 },
+    { start: Math.ceil(numBars * 0.75), length: Math.ceil(numBars * 0.125), type: 'verse2', intensity: 0.95, compMod: 0.1 },
+    { start: Math.ceil(numBars * 0.875), length: numBars - Math.ceil(numBars * 0.875), type: 'outro', intensity: 0.8, compMod: -0.1 },
+  ].filter(s => s.length > 0);
+
+  const actualDuration = numBars * beatsPerBar * beatDuration;
+
+  for (const section of structure) {
+     const sectionChords = chords.slice(section.start, section.start + section.length);
+     if (sectionChords.length === 0) continue;
+
+     // Remap bar numbers for the sub-generators
+     const mappedChords = sectionChords.map(c => ({...c, bar: c.bar - section.start}));
+     const sectionChordRoots = mappedChords.map(c => c.chord[0]);
+
+     const currentComplexity = Math.max(0, Math.min(1, complexity + section.compMod));
+
+     const secDrums = generateDrumNotes(genre, bpm, section.length, beatsPerBar, 2, section.intensity);
+     const secBass = generateBassNotes(mappedChords, beatsPerBar, bpm, genre, section.intensity);
+     const secMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.length, currentComplexity, sectionChordRoots, section.intensity);
+     const secHarmony = generateHarmonyNotes(mappedChords, beatsPerBar, bpm, section.intensity);
+
+     const timeOffset = section.start * beatsPerBar * beatDuration;
+
+     // Apply time offset to bring them back into global time
+     drumsNotes.push(...secDrums.map(n => ({...n, startTime: n.startTime + timeOffset})));
+     bassNotes.push(...secBass.map(n => ({...n, startTime: n.startTime + timeOffset})));
+     melodyNotes.push(...secMelody.map(n => ({...n, startTime: n.startTime + timeOffset})));
+     harmonyNotes.push(...secHarmony.map(n => ({...n, startTime: n.startTime + timeOffset})));
+  }
   
   // Create stem objects
   const stems: Stem[] = [
@@ -65,7 +101,6 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
   
   // Render audio buffers for each stem
   const engine = getAudioEngine();
-  const actualDuration = numBars * beatsPerBar * beatDuration;
   
   for (const stem of stems) {
     try {
@@ -90,6 +125,20 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
   };
 }
 
+// Get section mapping for regenerate/variation
+function getSectionForBar(bar: number, numBars: number) {
+  const introEnd = Math.ceil(numBars * 0.125);
+  const verse1End = introEnd + Math.ceil(numBars * 0.375);
+  const chorusEnd = verse1End + Math.ceil(numBars * 0.25);
+  const verse2End = chorusEnd + Math.ceil(numBars * 0.125);
+
+  if (bar < introEnd) return { intensity: 0.7, compMod: -0.2 };
+  if (bar < verse1End) return { intensity: 0.9, compMod: 0.0 };
+  if (bar < chorusEnd) return { intensity: 1.2, compMod: 0.2 };
+  if (bar < verse2End) return { intensity: 0.95, compMod: 0.1 };
+  return { intensity: 0.8, compMod: -0.1 };
+}
+
 // Regenerate a single stem
 export async function regenerateStem(
   track: Track,
@@ -107,16 +156,16 @@ export async function regenerateStem(
   
   switch (stemType) {
     case 'drums':
-      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar, 2, 1.0);
       break;
     case 'bass':
-      notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
+      notes = generateBassNotes(chords, beatsPerBar, bpm, genre, 1.0);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots, 1.0);
       break;
     case 'harmony':
-      notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
+      notes = generateHarmonyNotes(chords, beatsPerBar, bpm, 1.0);
       break;
   }
   
@@ -167,16 +216,16 @@ export async function generateStemVariation(
   
   switch (stem.type) {
     case 'drums':
-      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar, 2, 1.0);
       break;
     case 'bass':
-      notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
+      notes = generateBassNotes(chords, beatsPerBar, bpm, genre, 1.0);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, 1.0);
       break;
     case 'harmony':
-      notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
+      notes = generateHarmonyNotes(chords, beatsPerBar, bpm, 1.0);
       break;
   }
   

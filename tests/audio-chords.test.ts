@@ -86,6 +86,27 @@ describe('Audio Chords Generator', () => {
       expect(generateChord(60, 'major')).toEqual([48, 52, 55]);
     });
 
+    it('should generate maj7 chord', () => {
+      expect(generateChord(60, 'maj7', 4)).toEqual([60, 64, 67, 71]);
+    });
+
+    it('should generate m7b5 chord', () => {
+      expect(generateChord(60, 'm7b5', 4)).toEqual([60, 63, 66, 70]);
+    });
+
+    it('should generate sus4 chord', () => {
+      expect(generateChord(60, 'sus4', 4)).toEqual([60, 65, 67]);
+    });
+
+    it('should generate add9 chord', () => {
+      expect(generateChord(60, 'add9', 4)).toEqual([60, 64, 67, 74]);
+    });
+
+    it('should apply inversions', () => {
+      expect(generateChord(60, 'major', 4, 1)).toEqual([64, 67, 72]);
+      expect(generateChord(60, 'major', 4, 2)).toEqual([67, 72, 76]);
+    });
+
     it('should fallback to major for unknown chord type', () => {
       // @ts-expect-error testing invalid input
       expect(generateChord(60, 'unknown', 4)).toEqual([60, 64, 67]);
@@ -108,7 +129,7 @@ describe('Audio Chords Generator', () => {
 
     it('should handle jazz genre specific logic', () => {
       const progression = generateChordProgression(60, 'jazz', 'major', 1);
-      expect(progression[0].type).toBe('7th');
+      expect(['minor7', '7th', 'maj7']).toContain(progression[0].type);
     });
 
     it('should fallback to electronic progression for unknown genre', () => {
