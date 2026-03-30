@@ -2,6 +2,21 @@
 
 All notable changes to Loco-Tunes will be documented in this file.
 
+## Pipeline Activity — 2026-03-22 to 2026-03-25
+
+### Autonomous Pipeline (Jules + Gemini)
+- **PR #9** (test coverage for audio generation) — Gemini APPROVED, merged 2026-03-21
+- **PR #10** (IndexedDB project saving/loading, closes #8) — Gemini APPROVED, auto-merged 2026-03-22
+- **PRs #11, #12, #13** (stem-aware remixing, issue #2) — Gemini REQUEST_CHANGES on all three (missing audio generation logic, broken import, log file committed). All closed — issue #2 flagged as too complex for autonomous implementation.
+
+### Pipeline Health
+- Jules cron runs daily (4 AM UTC) — working
+- Gemini review catching real bugs — working
+- `delete_branch_on_merge` enabled, stale branches cleaned
+- Open issues: #2 (stem remixing — needs manual work), #3 (MIDI export), #4 (continuity memory), #5 (background continuation), #7 (generation quality)
+
+---
+
 ## [Version 0.2.0] - 2026-02-15
 
 ### 🧪 Testing Framework

@@ -1,6 +1,7 @@
 # Future Work
 
 ## Phase 3: Persistence
+- [x] Implement IndexedDB project saving and loading (PR #10, 2026-03-22 — Jules)
 - [ ] Update `prisma/schema.prisma` to include `Track`, `Stem`, `Note` models.
 - [ ] Create API routes (`src/app/api/tracks`) to save and load tracks.
 - [ ] Update frontend to save/load tracks from the database.
