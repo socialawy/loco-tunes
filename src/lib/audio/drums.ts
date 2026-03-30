@@ -32,40 +32,63 @@ const DRUM_PATTERNS: Record<Genre, DrumPattern[]> = {
     { step: 2, drum: 'kick', velocity: 127 },
     { step: 4, drum: 'kick', velocity: 127 },
     { step: 6, drum: 'kick', velocity: 127 },
+    // Ghost kick for groove
+    { step: 3.5, drum: 'kick', velocity: 50 },
     // Snare on 2 and 4
     { step: 2, drum: 'snare', velocity: 100 },
     { step: 6, drum: 'snare', velocity: 100 },
-    // Hi-hats on every beat
-    { step: 0, drum: 'hihatClosed', velocity: 70 },
-    { step: 1, drum: 'hihatClosed', velocity: 50 },
-    { step: 2, drum: 'hihatClosed', velocity: 70 },
-    { step: 3, drum: 'hihatClosed', velocity: 50 },
-    { step: 4, drum: 'hihatClosed', velocity: 70 },
-    { step: 5, drum: 'hihatClosed', velocity: 50 },
-    { step: 6, drum: 'hihatClosed', velocity: 70 },
-    { step: 7, drum: 'hihatClosed', velocity: 50 },
+    // Ghost snare
+    { step: 7.5, drum: 'snare', velocity: 40 },
+    // Hi-hats with more velocity dynamics (accent on downbeats)
+    { step: 0, drum: 'hihatClosed', velocity: 90 },
+    { step: 0.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 1, drum: 'hihatClosed', velocity: 70 },
+    { step: 1.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 2, drum: 'hihatClosed', velocity: 90 },
+    { step: 2.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 3, drum: 'hihatClosed', velocity: 70 },
+    { step: 3.5, drum: 'hihatOpen', velocity: 80 },
+    { step: 4, drum: 'hihatClosed', velocity: 90 },
+    { step: 4.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 5, drum: 'hihatClosed', velocity: 70 },
+    { step: 5.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 6, drum: 'hihatClosed', velocity: 90 },
+    { step: 6.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 7, drum: 'hihatClosed', velocity: 70 },
+    { step: 7.5, drum: 'hihatOpen', velocity: 80 },
   ],
   
   hiphop: [
     // Kick pattern - more syncopated
     { step: 0, drum: 'kick', velocity: 120 },
+    { step: 1.5, drum: 'kick', velocity: 80 }, // Syncopated
     { step: 3, drum: 'kick', velocity: 100 },
     { step: 5, drum: 'kick', velocity: 90 },
     // Snare on 2 and 4
     { step: 2, drum: 'snare', velocity: 110 },
     { step: 6, drum: 'snare', velocity: 110 },
+    // Ghost snare
+    { step: 4.5, drum: 'snare', velocity: 50 },
     // Clap layered with snare
     { step: 2, drum: 'clap', velocity: 80 },
     { step: 6, drum: 'clap', velocity: 80 },
     // Hi-hat pattern
-    { step: 0, drum: 'hihatClosed', velocity: 60 },
-    { step: 1, drum: 'hihatClosed', velocity: 40 },
-    { step: 2, drum: 'hihatClosed', velocity: 60 },
-    { step: 3, drum: 'hihatOpen', velocity: 50 },
-    { step: 4, drum: 'hihatClosed', velocity: 60 },
-    { step: 5, drum: 'hihatClosed', velocity: 40 },
-    { step: 6, drum: 'hihatClosed', velocity: 60 },
-    { step: 7, drum: 'hihatClosed', velocity: 40 },
+    { step: 0, drum: 'hihatClosed', velocity: 70 },
+    { step: 0.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 1, drum: 'hihatClosed', velocity: 60 },
+    { step: 1.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 2, drum: 'hihatClosed', velocity: 70 },
+    { step: 2.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 3, drum: 'hihatClosed', velocity: 60 },
+    { step: 3.5, drum: 'hihatOpen', velocity: 60 },
+    { step: 4, drum: 'hihatClosed', velocity: 70 },
+    { step: 4.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 5, drum: 'hihatClosed', velocity: 60 },
+    { step: 5.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 6, drum: 'hihatClosed', velocity: 70 },
+    { step: 6.5, drum: 'hihatClosed', velocity: 40 },
+    { step: 7, drum: 'hihatClosed', velocity: 60 },
+    { step: 7.5, drum: 'hihatOpen', velocity: 60 },
   ],
   
   ambient: [
@@ -97,22 +120,23 @@ const DRUM_PATTERNS: Record<Genre, DrumPattern[]> = {
   ],
   
   jazz: [
-    // Jazz ride pattern
+    // Jazz ride pattern (swing timing will be applied in generateDrumNotes)
     { step: 0, drum: 'ride', velocity: 80 },
     { step: 2, drum: 'ride', velocity: 70 },
-    { step: 3, drum: 'ride', velocity: 60 },
+    { step: 3.33, drum: 'ride', velocity: 60 }, // Swung 8th note
     { step: 4, drum: 'ride', velocity: 80 },
     { step: 6, drum: 'ride', velocity: 70 },
+    { step: 7.33, drum: 'ride', velocity: 60 }, // Swung 8th note
     // Hi-hat on 2 and 4
     { step: 2, drum: 'hihatClosed', velocity: 60 },
     { step: 6, drum: 'hihatClosed', velocity: 60 },
     // Sparse kick
     { step: 0, drum: 'kick', velocity: 60 },
-    // Brush snare
-    { step: 1, drum: 'snare', velocity: 40 },
-    { step: 3, drum: 'snare', velocity: 40 },
-    { step: 5, drum: 'snare', velocity: 40 },
-    { step: 7, drum: 'snare', velocity: 40 },
+    // Brush snare comps
+    { step: 1.33, drum: 'snare', velocity: 40 },
+    { step: 3, drum: 'snare', velocity: 30 },
+    { step: 5.33, drum: 'snare', velocity: 40 },
+    { step: 7, drum: 'snare', velocity: 30 },
   ],
 };
 
@@ -122,36 +146,67 @@ export function generateDrumNotes(
   bpm: number,
   numBars: number,
   beatsPerBar: number = 4,
-  stepsPerBeat: number = 2
+  stepsPerBeat: number = 2,
+  structureIntensity?: number[]
 ): Note[] {
   const notes: Note[] = [];
   const pattern = DRUM_PATTERNS[genre] || DRUM_PATTERNS.electronic;
   const stepsPerBar = beatsPerBar * stepsPerBeat;
-  const stepDuration = (60 / bpm) / stepsPerBeat;
+  const beatDuration = 60 / bpm;
+  const stepDuration = beatDuration / stepsPerBeat;
+
+  // Jazz swing percentage
+  const swingRatio = genre === 'jazz' ? 0.66 : (genre === 'hiphop' ? 0.55 : 0.5);
   
   for (let bar = 0; bar < numBars; bar++) {
+    const intensity = structureIntensity && structureIntensity[bar] !== undefined ? structureIntensity[bar] : 0.5;
+
     for (const hit of pattern) {
-      // Add variation based on bar position
-      let velocity = hit.velocity;
+      // Scale velocity by section intensity (0.5 is baseline)
+      let velocity = hit.velocity * (0.5 + intensity);
       const randomVariation = 0.9 + Math.random() * 0.2;
       velocity = Math.round(velocity * randomVariation);
       
-      // Add fills every 4 bars
-      if ((bar + 1) % 4 === 0 && bar === numBars - 1) {
+      // Mute some elements during low intensity
+      if (intensity < 0.3 && (hit.drum === 'hihatOpen' || hit.drum === 'crash' || hit.drum === 'tomHigh')) {
+        continue;
+      }
+
+      // Add fills every 4 bars, proportional to intensity
+      if ((bar + 1) % 4 === 0 && bar === numBars - 1 && intensity > 0.4) {
         // Add extra hits for fills
-        if (hit.drum === 'snare' || hit.drum === 'tomHigh') {
-          velocity = Math.min(127, velocity + 20);
+        if (hit.drum === 'snare' || hit.drum === 'tomHigh' || hit.drum === 'tomMid' || hit.drum === 'tomLow') {
+          velocity = Math.min(127, velocity + 30 * intensity);
         }
       }
       
-      const startTime = bar * (60 / bpm) * beatsPerBar + hit.step * stepDuration;
+      // Apply swing timing to off-beats
+      let adjustedStep = hit.step;
+      const isOffBeat = Math.abs(hit.step % 1 - 0.5) < 0.01;
+
+      if (isOffBeat && genre !== 'electronic' && genre !== 'ambient' && genre !== 'rock') {
+         const beatStart = Math.floor(hit.step);
+         adjustedStep = beatStart + swingRatio * 2 * 0.5; // swingRatio of the beat length (which is 2 steps)
+      }
+
+      const startTime = bar * beatDuration * beatsPerBar + adjustedStep * stepDuration;
       
       notes.push({
         pitch: DRUM_MIDI[hit.drum],
-        velocity,
+        velocity: Math.min(127, Math.max(0, velocity)),
         startTime,
         duration: stepDuration * 0.9,
       });
+    }
+
+    // Sometimes add a crash at the start of a high intensity section
+    if (bar > 0 && intensity > 0.7 && (!structureIntensity || structureIntensity[bar - 1] < 0.7)) {
+       notes.push({
+         pitch: DRUM_MIDI.crash,
+         velocity: 100,
+         startTime: bar * beatDuration * beatsPerBar,
+         duration: beatDuration * 2,
+       });
     }
   }
   

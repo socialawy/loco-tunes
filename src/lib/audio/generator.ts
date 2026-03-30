@@ -43,16 +43,19 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
   const beatDuration = 60 / bpm;
   const numBars = Math.ceil(duration / (beatsPerBar * beatDuration));
   
+  // Generate structural intensity
+  const structureIntensity = getStructureIntensity(numBars);
+
   // Generate chord progression
-  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  const chords = generateChordProgression(rootMidi, genre, scale, numBars, structureIntensity);
   
   // Extract chord roots for melody generation
   const chordRoots = chords.map(c => c.chord[0]);
   
   // Generate all stems
-  const drumsNotes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
-  const bassNotes = generateBassNotes(chords, beatsPerBar, bpm, genre);
-  const melodyNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
+  const drumsNotes = generateDrumNotes(genre, bpm, numBars, beatsPerBar, 2, structureIntensity);
+  const bassNotes = generateBassNotes(chords, beatsPerBar, bpm, genre); // We could pass intensity here too, but left as is for now
+  const melodyNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots, structureIntensity);
   const harmonyNotes = generateHarmonyNotes(chords, beatsPerBar, bpm);
   
   // Create stem objects
@@ -101,19 +104,22 @@ export async function regenerateStem(
   const beatDuration = 60 / bpm;
   const numBars = Math.ceil(track.duration / (beatsPerBar * beatDuration));
   
+  // Re-generate structural intensity to match
+  const structureIntensity = getStructureIntensity(numBars);
+
   let notes: Note[] = [];
-  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  const chords = generateChordProgression(rootMidi, genre, scale, numBars, structureIntensity);
   const chordRoots = chords.map(c => c.chord[0]);
   
   switch (stemType) {
     case 'drums':
-      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar, 2, structureIntensity);
       break;
     case 'bass':
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots, structureIntensity);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
@@ -158,22 +164,25 @@ export async function generateStemVariation(
     ? lastNoteEnd / (beatsPerBar * beatDuration)
     : 4);
   
+  // Re-generate structural intensity to match
+  const structureIntensity = getStructureIntensity(numBars);
+
   // Add some variation by adjusting complexity
   const variedComplexity = Math.max(0, Math.min(1, complexity + (Math.random() - 0.5) * 0.3));
   
-  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  const chords = generateChordProgression(rootMidi, genre, scale, numBars, structureIntensity);
   const chordRoots = chords.map(c => c.chord[0]);
   let notes: Note[] = [];
   
   switch (stem.type) {
     case 'drums':
-      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar, 2, structureIntensity);
       break;
     case 'bass':
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, structureIntensity);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
@@ -194,6 +203,25 @@ export async function generateStemVariation(
     notes,
     audioBuffer,
   };
+}
+
+// Helper function to generate structural intensity for a given duration
+function getStructureIntensity(numBars: number): number[] {
+  const structureIntensity: number[] = [];
+  const barsPerSection = 4;
+  const sections = Math.ceil(numBars / barsPerSection);
+  // Define a simple structure: Intro(0.3) -> Verse(0.6) -> Chorus(1.0) -> Verse(0.7) -> Chorus(1.0) -> Outro(0.4)
+  const pattern = [0.3, 0.6, 1.0, 0.7, 1.0, 0.4];
+
+  for (let s = 0; s < sections; s++) {
+    const intensity = pattern[s % pattern.length];
+    for (let b = 0; b < barsPerSection; b++) {
+      if (s * barsPerSection + b < numBars) {
+        structureIntensity.push(intensity);
+      }
+    }
+  }
+  return structureIntensity;
 }
 
 // Helper function to manually override hardware detection

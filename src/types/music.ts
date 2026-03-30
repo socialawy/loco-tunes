@@ -130,11 +130,11 @@ export const SCALES: Record<string, number[]> = {
 
 // Chord progressions by genre
 export const CHORD_PROGRESSIONS: Record<Genre, number[][]> = {
-  electronic: [[0, 0], [3, 0], [4, 0], [4, 5]], // I - IV - V - V/V
+  electronic: [[0, 0], [3, 0], [4, 0], [5, 0]], // I - IV - V - VI
   hiphop: [[0, 0], [2, -1], [3, 0], [5, 0]], // i - III - IV - VI
   ambient: [[0, 0], [0, 0], [2, 0], [3, 0]], // Sustained patterns
   rock: [[0, 0], [4, 0], [5, 0], [4, 0]], // I - V - VI - V
-  jazz: [[0, 0], [3, 1], [4, 0], [2, 0]], // ii-V-I variations
+  jazz: [[1, 0], [4, 0], [0, 0], [5, 0]], // ii - V - I - VI
 };
 
 // Note names for MIDI conversion

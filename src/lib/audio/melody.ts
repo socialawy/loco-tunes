@@ -65,11 +65,13 @@ export function generateMelodyNotes(
   bpm: number,
   numBars: number,
   complexity: number,
-  chordRoots: number[] = []
+  chordRoots: number[] = [],
+  structureIntensity?: number[]
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
+  const barDuration = 4 * beatDuration;
   
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
@@ -86,28 +88,40 @@ export function generateMelodyNotes(
   
   let currentTime = 0;
   let currentScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
-  let barCount = 0;
   let noteIndex = 0;
+  let phraseLength = 0;
   
-  while (currentTime < numBars * 4 * beatDuration) {
-    const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
+  while (currentTime < numBars * barDuration) {
+    const currentBar = Math.floor(currentTime / barDuration);
+    const intensity = structureIntensity && structureIntensity[currentBar] !== undefined ? structureIntensity[currentBar] : 0.5;
+
+    // Adjust complexity based on structural intensity
+    const effectiveComplexity = complexity * (0.5 + intensity * 0.5);
+
     const patternIndex = noteIndex % selectedPattern.length;
     const duration = selectedPattern[patternIndex] * beatDuration;
     
     // Determine if this note should play (complexity affects density)
-    const shouldPlay = Math.random() < (0.6 + complexity * 0.3);
+    // Add phrasing: force a rest after a long phrase
+    let shouldPlay = Math.random() < (0.4 + effectiveComplexity * 0.5);
     
+    if (phraseLength > 8 + Math.random() * 8) {
+      shouldPlay = false; // Force a rest to create phrasing
+      phraseLength = 0;
+    }
+
     if (shouldPlay && duration > 0) {
+      phraseLength++;
       // Apply contour bias to scale index movement
       let direction = 0;
-      const contourProgress = currentTime / (numBars * 4 * beatDuration);
+      const contourProgress = currentTime / (numBars * barDuration);
       
       switch (contour) {
         case 'ascending':
-          direction = Math.random() < 0.6 ? 1 : -1;
+          direction = Math.random() < 0.7 ? 1 : -1;
           break;
         case 'descending':
-          direction = Math.random() < 0.6 ? -1 : 1;
+          direction = Math.random() < 0.7 ? -1 : 1;
           break;
         case 'arch':
           direction = contourProgress < 0.5 ? 1 : -1;
@@ -120,25 +134,44 @@ export function generateMelodyNotes(
           break;
       }
       
-      // Add randomness based on jumpiness
-      if (Math.random() < jumpiness) {
-        direction *= Math.floor(Math.random() * 3) + 1; // Bigger jumps
+      // Step-wise motion is preferred, penalize large leaps unless high jumpiness
+      if (Math.random() > jumpiness) {
+         // Keep direction as 1 or -1 (step-wise)
+         direction = direction > 0 ? 1 : (direction < 0 ? -1 : 0);
+      } else {
+         // Leap
+         direction *= Math.floor(Math.random() * 3) + 1;
       }
       
-      currentScaleIndex = Math.max(0, Math.min(extendedScale.length - 1, currentScaleIndex + direction));
+      const nextScaleIndex = Math.max(0, Math.min(extendedScale.length - 1, currentScaleIndex + direction));
+
+      // Resolve leading tones (scale degree 7) to tonic (scale degree 8/1)
+      const currentPitch = extendedScale[currentScaleIndex];
+      const nextPitch = extendedScale[nextScaleIndex];
+      const scaleDegree = (nextPitch - rootMidi) % 12;
+
+      // If we landed on a leading tone (major 7th, 11 semitones from root), strong tendency to resolve up
+      if (scaleDegree === 11 && Math.random() > 0.3) {
+        currentScaleIndex = Math.min(extendedScale.length - 1, nextScaleIndex + 1);
+      } else {
+        currentScaleIndex = nextScaleIndex;
+      }
       
       const pitch = extendedScale[currentScaleIndex];
       
-      // Velocity varies based on position and randomness
-      const baseVelocity = genre === 'ambient' ? 60 : 80;
-      const velocity = Math.round(baseVelocity + Math.random() * 30);
+      // Velocity varies based on position, randomness, and structural intensity
+      const baseVelocity = genre === 'ambient' ? 50 : 70;
+      const intensityBoost = intensity * 30;
+      const velocity = Math.round(baseVelocity + intensityBoost + Math.random() * 20);
       
       notes.push({
         pitch,
-        velocity,
+        velocity: Math.min(127, Math.max(0, velocity)),
         startTime: currentTime,
-        duration: duration * (0.8 + Math.random() * 0.15), // Slight variation
+        duration: duration * (0.7 + Math.random() * 0.2), // More staccato phrasing
       });
+    } else {
+      phraseLength = 0; // Reset phrase on rest
     }
     
     currentTime += duration;

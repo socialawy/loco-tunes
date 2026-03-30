@@ -108,7 +108,8 @@ describe('Audio Chords Generator', () => {
 
     it('should handle jazz genre specific logic', () => {
       const progression = generateChordProgression(60, 'jazz', 'major', 1);
-      expect(progression[0].type).toBe('7th');
+      // First chord of jazz major progression is ii, so it's a minor9
+      expect(progression[0].type).toBe('minor9');
     });
 
     it('should fallback to electronic progression for unknown genre', () => {

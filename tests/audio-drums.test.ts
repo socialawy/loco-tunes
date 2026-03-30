@@ -5,22 +5,22 @@ describe('Audio Drums Generator', () => {
   describe('generateDrumNotes', () => {
     it('should generate electronic drum pattern', () => {
       const notes = generateDrumNotes('electronic', 120, 1, 4, 2);
-      // 4 kicks + 2 snares + 8 hihats = 14 notes
-      expect(notes.length).toBeGreaterThanOrEqual(14);
+      // 5 kicks + 3 snares + 14 closed hihats + 2 open hihats = 24 notes
+      expect(notes.length).toBeGreaterThanOrEqual(24);
 
       const kicks = notes.filter(n => n.pitch === DRUM_MIDI.kick);
-      expect(kicks.length).toBe(4); // Every beat
+      expect(kicks.length).toBe(5); // Every beat plus one ghost kick
 
       const snares = notes.filter(n => n.pitch === DRUM_MIDI.snare);
-      expect(snares.length).toBe(2); // Beat 2 and 4
+      expect(snares.length).toBe(3); // Beat 2 and 4 plus one ghost snare
 
       const hihats = notes.filter(n => n.pitch === DRUM_MIDI.hihatClosed);
-      expect(hihats.length).toBe(8); // Every 8th note
+      expect(hihats.length).toBe(14); // 16th notes minus the 2 open hihats
     });
 
     it('should generate hiphop drum pattern', () => {
       const notes = generateDrumNotes('hiphop', 90, 1, 4, 2);
-      expect(notes.length).toBeGreaterThanOrEqual(14);
+      expect(notes.length).toBeGreaterThanOrEqual(24);
 
       const claps = notes.filter(n => n.pitch === DRUM_MIDI.clap);
       expect(claps.length).toBe(2); // Layered with snare

@@ -24,7 +24,7 @@ export function getScale(rootMidi: number, scaleName: string): number[] {
 // Generate chord tones from a root note
 export function generateChord(
   rootMidi: number,
-  chordType: 'major' | 'minor' | 'dim' | 'aug' | '7th' | 'minor7',
+  chordType: 'major' | 'minor' | 'dim' | 'aug' | '7th' | 'minor7' | 'sus4' | '9th' | 'minor9',
   octave: number = 3
 ): number[] {
   const root = rootMidi + (octave - 4) * 12;
@@ -36,6 +36,9 @@ export function generateChord(
     aug: [0, 4, 8],
     '7th': [0, 4, 7, 10],
     minor7: [0, 3, 7, 10],
+    sus4: [0, 5, 7],
+    '9th': [0, 4, 7, 10, 14],
+    minor9: [0, 3, 7, 10, 14],
   };
   
   const intervals = chordIntervals[chordType] || chordIntervals.major;
@@ -47,7 +50,8 @@ export function generateChordProgression(
   rootMidi: number,
   genre: Genre,
   scaleName: string,
-  numBars: number
+  numBars: number,
+  structureIntensity?: number[]
 ): { chord: number[]; bar: number; type: string }[] {
   const progression = CHORD_PROGRESSIONS[genre] || CHORD_PROGRESSIONS.electronic;
   const scale = getScale(rootMidi, scaleName);
@@ -57,12 +61,20 @@ export function generateChordProgression(
   for (let bar = 0; bar < numBars; bar++) {
     const progIndex = bar % progression.length;
     const [scaleDegree, modifier] = progression[progIndex];
+    const intensity = structureIntensity && structureIntensity[bar] !== undefined ? structureIntensity[bar] : 0.5;
     
     // Get the root of the chord from scale degree
-    const chordRoot = scale[scaleDegree % scale.length];
+    let chordRoot = scale[scaleDegree % scale.length];
     
+    // Support secondary dominants (e.g., if modifier is 5, it's a V of something)
+    if (modifier === 5) {
+      // V/V
+      const targetDegree = (scaleDegree + 4) % scale.length;
+      chordRoot = scale[targetDegree] + 7; // Perfect fifth above target
+    }
+
     // Determine chord type based on scale degree and modifier
-    let chordType: 'major' | 'minor' | 'dim' | '7th' = 'major';
+    let chordType: 'major' | 'minor' | 'dim' | '7th' | 'minor7' | 'sus4' | '9th' | 'minor9' = 'major';
     if (scaleName === 'minor') {
       if ([0, 3, 4].includes(scaleDegree % scale.length)) {
         chordType = 'minor';
@@ -75,7 +87,18 @@ export function generateChordProgression(
     
     if (modifier === -1) chordType = 'minor';
     if (modifier === 1) chordType = 'major';
-    if (genre === 'jazz') chordType = '7th';
+    if (modifier === 5) chordType = 'major'; // Secondary dominants are major
+
+    // Genre specific and intensity specific voicing
+    if (genre === 'jazz') {
+      chordType = chordType === 'minor' ? 'minor9' : '9th';
+    } else if (genre === 'electronic' || genre === 'ambient') {
+      if (intensity > 0.7 && Math.random() > 0.5) {
+        chordType = chordType === 'minor' ? 'minor7' : 'sus4'; // Add flavor in high intensity
+      } else if (intensity < 0.3 && chordType === 'major') {
+        chordType = 'sus4'; // Ambiguous in low intensity
+      }
+    }
     
     const chordNotes = generateChord(chordRoot, chordType, 3);
     chords.push({ chord: chordNotes, bar, type: chordType });
@@ -206,6 +229,9 @@ export function getChordName(rootMidi: number, type: string): string {
     aug: '+',
     '7th': '7',
     minor7: 'm7',
+    sus4: 'sus4',
+    '9th': '9',
+    minor9: 'm9',
   };
   return noteName + (suffix[type] || '');
 }
