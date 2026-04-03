@@ -49,36 +49,111 @@ export function generateChordProgression(
   scaleName: string,
   numBars: number
 ): { chord: number[]; bar: number; type: string }[] {
-  const progression = CHORD_PROGRESSIONS[genre] || CHORD_PROGRESSIONS.electronic;
+  let progression = CHORD_PROGRESSIONS[genre] || CHORD_PROGRESSIONS.electronic;
   const scale = getScale(rootMidi, scaleName);
   
+  // Extend basic progression to include variations (secondary dominants, borrowed chords)
+  const createVariation = (baseProg: number[][]): number[][] => {
+    return baseProg.map(([deg, mod], i) => {
+      // 15% chance to substitute a chord with its secondary dominant or related chord
+      if (Math.random() < 0.15 && i > 0 && i < baseProg.length - 1) {
+        if (genre === 'jazz' || genre === 'rock') {
+           // Secondary dominant (V/V) substituting a ii or IV
+           return [(deg + 4) % 7, 1]; // Make it major
+        }
+        if (genre === 'electronic' || genre === 'hiphop') {
+           // Borrowed chord from parallel minor (e.g. flat VI in major)
+           if (scaleName === 'major' && deg === 5) {
+             return [5, 1]; // Make vi major -> VI
+           }
+        }
+      }
+      return [deg, mod];
+    });
+  };
+
   const chords: { chord: number[]; bar: number; type: string }[] = [];
   
+  // Song structure logic: Intro (4 bars), Verse (8 bars), Chorus (8 bars)...
+  let currentSection = 'verse';
+  let sectionProgression = [...progression];
+
   for (let bar = 0; bar < numBars; bar++) {
-    const progIndex = bar % progression.length;
-    const [scaleDegree, modifier] = progression[progIndex];
+    // Change section every 8 bars to introduce A/B part variation
+    if (bar % 8 === 0) {
+      if (currentSection === 'verse') {
+        currentSection = 'chorus';
+        // Chorus often starts on the IV or vi chord, we rotate the progression or create variation
+        sectionProgression = createVariation(progression);
+      } else {
+        currentSection = 'verse';
+        sectionProgression = [...progression];
+      }
+    }
+
+    const progIndex = bar % sectionProgression.length;
+    const [scaleDegree, modifier] = sectionProgression[progIndex];
     
     // Get the root of the chord from scale degree
     const chordRoot = scale[scaleDegree % scale.length];
     
     // Determine chord type based on scale degree and modifier
-    let chordType: 'major' | 'minor' | 'dim' | '7th' = 'major';
+    let chordType: 'major' | 'minor' | 'dim' | '7th' | 'minor7' = 'major';
+
     if (scaleName === 'minor') {
-      if ([0, 3, 4].includes(scaleDegree % scale.length)) {
+      if ([0, 3, 4].includes(scaleDegree % 7)) {
         chordType = 'minor';
+      } else if (scaleDegree % 7 === 1) {
+        chordType = 'dim'; // diminished ii chord in minor
+      } else if (scaleDegree % 7 === 6) { // Leading tone (VII)
+         chordType = 'major'; // usually subtonic is major in natural minor
       }
     } else {
-      if ([1, 2, 5].includes(scaleDegree % scale.length)) {
+      if ([1, 2, 5].includes(scaleDegree % 7)) {
         chordType = 'minor';
+      } else if (scaleDegree % 7 === 6) {
+        chordType = 'dim'; // diminished vii chord in major
       }
     }
     
     if (modifier === -1) chordType = 'minor';
     if (modifier === 1) chordType = 'major';
-    if (genre === 'jazz') chordType = '7th';
+    if (modifier === 2) chordType = 'dim';
     
-    const chordNotes = generateChord(chordRoot, chordType, 3);
-    chords.push({ chord: chordNotes, bar, type: chordType });
+    // Genre specific voicings
+    if (genre === 'jazz') {
+      chordType = chordType === 'minor' ? 'minor7' : (chordType === 'major' ? '7th' : chordType);
+    } else if (genre === 'ambient') {
+       // Open up the chords for ambient
+       chordType = chordType === 'minor' ? 'minor7' : chordType;
+    }
+
+    // Improve voice leading: Alternate inversions by adjusting octaves
+    // Simple heuristic: if the root jumps too much, drop it an octave
+    let octave = 3;
+    if (chords.length > 0) {
+       const prevRoot = chords[chords.length - 1].chord[0];
+       const currentBaseRoot = chordRoot + (octave - 4) * 12;
+       if (currentBaseRoot - prevRoot > 7) {
+           octave = 2; // Invert down
+       } else if (currentBaseRoot - prevRoot < -7) {
+           octave = 4; // Invert up
+       }
+    }
+
+    const chordNotes = generateChord(chordRoot, chordType, octave);
+
+    // Voice leading - avoid parallel fifths by adjusting the 5th occasionally
+    if (chords.length > 0 && Math.random() > 0.5) {
+        const prevChord = chords[chords.length - 1].chord;
+        // If it's just moving up/down a step, change inversion of the current chord
+        if (chordNotes.length > 2 && prevChord.length > 2) {
+            // Drop top note an octave
+            chordNotes[2] -= 12;
+        }
+    }
+
+    chords.push({ chord: chordNotes.sort((a,b)=>a-b), bar, type: chordType });
   }
   
   return chords;

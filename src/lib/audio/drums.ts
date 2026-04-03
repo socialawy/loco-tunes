@@ -128,23 +128,45 @@ export function generateDrumNotes(
   const pattern = DRUM_PATTERNS[genre] || DRUM_PATTERNS.electronic;
   const stepsPerBar = beatsPerBar * stepsPerBeat;
   const stepDuration = (60 / bpm) / stepsPerBeat;
+  const barDuration = (60 / bpm) * beatsPerBar;
   
   for (let bar = 0; bar < numBars; bar++) {
+    const isVariationSection = Math.floor(bar / 8) % 2 === 1; // Chorus/B part
+    const isFillBar = (bar + 1) % 4 === 0;
+
     for (const hit of pattern) {
+      // Skip some notes occasionally for syncopation/groove, mostly in verse
+      if (!isVariationSection && hit.drum === 'kick' && hit.step % 2 !== 0 && Math.random() < 0.3) {
+          continue;
+      }
+
       // Add variation based on bar position
       let velocity = hit.velocity;
       const randomVariation = 0.9 + Math.random() * 0.2;
       velocity = Math.round(velocity * randomVariation);
       
+      // Increase energy in chorus
+      if (isVariationSection) {
+         velocity = Math.min(127, velocity + 10);
+      }
+
       // Add fills every 4 bars
-      if ((bar + 1) % 4 === 0 && bar === numBars - 1) {
-        // Add extra hits for fills
-        if (hit.drum === 'snare' || hit.drum === 'tomHigh') {
-          velocity = Math.min(127, velocity + 20);
+      if (isFillBar) {
+        // Increase velocity for fills
+        if (hit.drum === 'snare' || hit.drum === 'tomHigh' || hit.drum === 'kick') {
+          velocity = Math.min(127, velocity + 15);
         }
       }
       
-      const startTime = bar * (60 / bpm) * beatsPerBar + hit.step * stepDuration;
+      // Swing timing (delaying the off-beats slightly)
+      let swingOffset = 0;
+      if (genre === 'jazz' && hit.step % 2 !== 0) {
+        swingOffset = stepDuration * 0.33; // classic triplet swing feel
+      } else if ((genre === 'hiphop' || genre === 'electronic') && hit.step % 2 !== 0) {
+        swingOffset = stepDuration * 0.15; // subtle MPC-style swing
+      }
+
+      const startTime = bar * barDuration + hit.step * stepDuration + swingOffset;
       
       notes.push({
         pitch: DRUM_MIDI[hit.drum],
@@ -152,6 +174,47 @@ export function generateDrumNotes(
         startTime,
         duration: stepDuration * 0.9,
       });
+    }
+
+    // Add explicit fills (extra notes) at the end of the 4th/8th bar
+    if (isFillBar) {
+        const fillStartTime = bar * barDuration + (stepsPerBar - 2) * stepDuration; // last beat
+        // Snare roll
+        notes.push({
+            pitch: DRUM_MIDI['snare'],
+            velocity: 90,
+            startTime: fillStartTime,
+            duration: stepDuration * 0.4
+        });
+        notes.push({
+            pitch: DRUM_MIDI['snare'],
+            velocity: 110,
+            startTime: fillStartTime + stepDuration * 0.5,
+            duration: stepDuration * 0.4
+        });
+        // Crash on the 1 of the NEXT bar, but we just add it slightly ahead or let the next loop handle it
+        if (bar < numBars - 1) {
+            notes.push({
+                pitch: DRUM_MIDI['crash'],
+                velocity: 100,
+                startTime: (bar + 1) * barDuration, // 1 of next bar
+                duration: stepDuration * 2.0
+            });
+        }
+    }
+
+    // Add extra hi-hats in the chorus section for drive
+    if (isVariationSection && (genre === 'electronic' || genre === 'hiphop')) {
+        for (let i = 0; i < stepsPerBar; i++) {
+             // 16th notes offbeats
+             const offbeatTime = bar * barDuration + i * stepDuration + (stepDuration / 2);
+             notes.push({
+                 pitch: DRUM_MIDI['hihatClosed'],
+                 velocity: 40 + Math.random() * 20,
+                 startTime: offbeatTime,
+                 duration: stepDuration * 0.4
+             });
+        }
     }
   }
   

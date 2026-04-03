@@ -70,6 +70,7 @@ export function generateMelodyNotes(
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
+  const barDuration = beatDuration * 4;
   
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
@@ -82,62 +83,109 @@ export function generateMelodyNotes(
   
   // Select rhythm pattern based on genre
   const rhythmPatterns = MELODY_RHYTHM_PATTERNS[genre] || MELODY_RHYTHM_PATTERNS.electronic;
-  const selectedPattern = rhythmPatterns[Math.floor(Math.random() * rhythmPatterns.length)];
+  const mainPattern = rhythmPatterns[0];
+  const variationPattern = rhythmPatterns.length > 1 ? rhythmPatterns[1] : mainPattern;
   
   let currentTime = 0;
   let currentScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
-  let barCount = 0;
   let noteIndex = 0;
   
-  while (currentTime < numBars * 4 * beatDuration) {
-    const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
+  while (currentTime < numBars * barDuration) {
+    const currentBar = Math.floor(currentTime / barDuration);
+    const contourProgress = currentTime / (numBars * barDuration);
+
+    // Switch to variation pattern for B parts/chorus sections (e.g. bars 8-15)
+    const isVariationSection = Math.floor(currentBar / 8) % 2 === 1;
+    const selectedPattern = isVariationSection ? variationPattern : mainPattern;
+
     const patternIndex = noteIndex % selectedPattern.length;
     const duration = selectedPattern[patternIndex] * beatDuration;
     
+    // Add syncopation (slight shift in start time) for certain genres/sections
+    let syncopationShift = 0;
+    if ((genre === 'jazz' || genre === 'electronic') && Math.random() < complexity * 0.3) {
+      syncopationShift = (Math.random() > 0.5 ? 1 : -1) * (beatDuration / 4); // 16th note shift
+    }
+
     // Determine if this note should play (complexity affects density)
-    const shouldPlay = Math.random() < (0.6 + complexity * 0.3);
+    // Less dense in verses, slightly more in choruses
+    const sectionDensityBonus = isVariationSection ? 0.1 : 0;
+    const shouldPlay = Math.random() < (0.6 + complexity * 0.3 + sectionDensityBonus);
     
-    if (shouldPlay && duration > 0) {
-      // Apply contour bias to scale index movement
-      let direction = 0;
-      const contourProgress = currentTime / (numBars * 4 * beatDuration);
+    if (shouldPlay && duration > 0 && currentTime + syncopationShift >= 0) {
+      // Apply contour bias to scale index movement strictly
+      let targetDirection = 0;
       
       switch (contour) {
         case 'ascending':
-          direction = Math.random() < 0.6 ? 1 : -1;
+          targetDirection = 1;
           break;
         case 'descending':
-          direction = Math.random() < 0.6 ? -1 : 1;
+          targetDirection = -1;
           break;
         case 'arch':
-          direction = contourProgress < 0.5 ? 1 : -1;
+          targetDirection = contourProgress < 0.5 ? 1 : -1;
           break;
         case 'valley':
-          direction = contourProgress < 0.5 ? -1 : 1;
+          targetDirection = contourProgress < 0.5 ? -1 : 1;
           break;
         case 'wave':
-          direction = Math.sin(contourProgress * Math.PI * 4) > 0 ? 1 : -1;
+          targetDirection = Math.sin(contourProgress * Math.PI * 4) > 0 ? 1 : -1;
           break;
       }
       
+      // We don't want to strictly move up every note, just bias it heavily
+      let direction = Math.random() < 0.75 ? targetDirection : (Math.random() < 0.5 ? -targetDirection : 0);
+
       // Add randomness based on jumpiness
       if (Math.random() < jumpiness) {
         direction *= Math.floor(Math.random() * 3) + 1; // Bigger jumps
       }
       
+      // Occasional large interval leap for dramatic effect if complexity is high
+      if (Math.random() < complexity * 0.1) {
+          direction += (Math.random() > 0.5 ? 4 : -4);
+      }
+
       currentScaleIndex = Math.max(0, Math.min(extendedScale.length - 1, currentScaleIndex + direction));
       
-      const pitch = extendedScale[currentScaleIndex];
+      // If we have chord roots, bias towards chord tones on downbeats
+      let pitch = extendedScale[currentScaleIndex];
+      const isDownbeat = (currentTime % beatDuration) < 0.05;
+      if (isDownbeat && chordRoots.length > 0) {
+          const currentChordRoot = chordRoots[Math.min(currentBar, chordRoots.length - 1)];
+          // Only shift occasionally if we are not matching the chord root or its 5th
+          const noteClass = pitch % 12;
+          const rootClass = currentChordRoot % 12;
+          const fifthClass = (currentChordRoot + 7) % 12;
+          if (noteClass !== rootClass && noteClass !== fifthClass && Math.random() < 0.5) {
+             // Shift pitch to nearest root or 5th
+             const shiftToRoot = ((rootClass - noteClass + 12) % 12 <= 6) ? (rootClass - noteClass) : (rootClass - noteClass - 12);
+             const shiftToFifth = ((fifthClass - noteClass + 12) % 12 <= 6) ? (fifthClass - noteClass) : (fifthClass - noteClass - 12);
+             pitch += (Math.abs(shiftToRoot) < Math.abs(shiftToFifth)) ? shiftToRoot : shiftToFifth;
+             // Ensure we stay in bounds roughly
+             if (pitch < extendedScale[0] || pitch > extendedScale[extendedScale.length - 1]) {
+                 pitch = extendedScale[currentScaleIndex]; // Revert
+             }
+          }
+      }
+
+      // Dynamic velocity shaping: crescendo towards the middle of a phrase, decrescendo at the end
+      const phraseProgress = (currentBar % 4) / 4; // 4-bar phrases
+      let phraseMultiplier = Math.sin(phraseProgress * Math.PI); // 0 -> 1 -> 0 shape
+      // Emphasize downbeats
+      if (isDownbeat) phraseMultiplier += 0.2;
       
-      // Velocity varies based on position and randomness
-      const baseVelocity = genre === 'ambient' ? 60 : 80;
-      const velocity = Math.round(baseVelocity + Math.random() * 30);
+      const baseVelocity = genre === 'ambient' ? 50 : 70;
+      // Map phraseMultiplier (approx 0 to 1.2) to velocity range
+      const dynamicVelocity = baseVelocity + (phraseMultiplier * 30);
+      const velocity = Math.max(10, Math.min(127, Math.round(dynamicVelocity + (Math.random() * 10 - 5))));
       
       notes.push({
         pitch,
         velocity,
-        startTime: currentTime,
-        duration: duration * (0.8 + Math.random() * 0.15), // Slight variation
+        startTime: currentTime + syncopationShift,
+        duration: duration * (0.8 + Math.random() * 0.15), // Slight articulation variation
       });
     }
     
