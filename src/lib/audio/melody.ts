@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood } from '@/types/music';
+import type { Genre, Note, Mood, SectionType } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -65,7 +65,8 @@ export function generateMelodyNotes(
   bpm: number,
   numBars: number,
   complexity: number,
-  chordRoots: number[] = []
+  chordRoots: number[] = [],
+  sectionType: SectionType = 'verse'
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -130,8 +131,21 @@ export function generateMelodyNotes(
       const pitch = extendedScale[currentScaleIndex];
       
       // Velocity varies based on position and randomness
-      const baseVelocity = genre === 'ambient' ? 60 : 80;
-      const velocity = Math.round(baseVelocity + Math.random() * 30);
+      // Dynamic velocity changes (crescendo/decrescendo) based on section and contour progress
+      let baseVelocity = genre === 'ambient' ? 60 : 80;
+
+      // Crescendo for verse (building up), high for chorus, decrescendo for outro
+      if (sectionType === 'verse') {
+        baseVelocity += Math.floor(contourProgress * 20); // Crescendo
+      } else if (sectionType === 'chorus') {
+        baseVelocity += 20; // Consistently loud
+      } else if (sectionType === 'outro') {
+        baseVelocity -= Math.floor(contourProgress * 20); // Decrescendo
+      } else if (sectionType === 'intro') {
+        baseVelocity -= 10; // Softer intro
+      }
+
+      const velocity = Math.max(0, Math.min(127, Math.round(baseVelocity + Math.random() * 20)));
       
       notes.push({
         pitch,

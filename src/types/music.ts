@@ -4,6 +4,8 @@ export type Genre = 'electronic' | 'hiphop' | 'ambient' | 'rock' | 'jazz';
 
 export type Mood = 'happy' | 'sad' | 'energetic' | 'calm' | 'dark' | 'uplifting';
 
+export type SectionType = 'intro' | 'verse' | 'chorus' | 'outro';
+
 export type StemType = 'drums' | 'bass' | 'melody' | 'harmony';
 
 export interface GenerationParams {
@@ -41,6 +43,7 @@ export interface Track {
   params: GenerationParams;
   stems: Stem[];
   duration: number;
+  sections?: { type: SectionType; startBar: number; numBars: number }[];
   createdAt: Date;
 }
 
