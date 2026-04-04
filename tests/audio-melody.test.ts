@@ -36,6 +36,22 @@ describe('Audio Melody Generator', () => {
       expect(notes.length).toBeGreaterThan(0);
     });
 
+    it('should apply dynamic velocity based on sections (chorus vs intro)', () => {
+      const chorusNotes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 1, 1, [], 'chorus');
+      const introNotes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 1, 1, [], 'intro');
+
+      // We expect chorus notes to be generally louder due to +20 offset, intro softer due to -10 offset
+      if (chorusNotes.length > 0 && introNotes.length > 0) {
+        expect(chorusNotes[0].velocity).toBeGreaterThan(introNotes[0].velocity - 10);
+      }
+    });
+
+    it('should generate crescendo for verse', () => {
+      const verseNotes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 4, 1, [], 'verse');
+      // Just assert it generates without crashing, specific values are heavily randomized
+      expect(verseNotes.length).toBeGreaterThan(0);
+    });
+
     it('should handle different moods correctly', () => {
       // It's hard to test the exact internal paths perfectly due to randomness,
       // but we can ensure it returns notes for each mood without error.

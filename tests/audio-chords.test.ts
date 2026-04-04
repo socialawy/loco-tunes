@@ -116,6 +116,25 @@ describe('Audio Chords Generator', () => {
       const progression = generateChordProgression(60, 'unknown', 'major', 1);
       expect(progression[0]).toHaveProperty('chord');
     });
+
+    it('should generate chorus variations', () => {
+      const chorusProgression = generateChordProgression(60, 'electronic', 'major', 4, 'chorus');
+      expect(chorusProgression).toHaveLength(4);
+      // Chorus often repeats I or IV depending on implementation logic
+    });
+
+    it('should generate intro variations', () => {
+      const introProgression = generateChordProgression(60, 'electronic', 'major', 4, 'intro');
+      expect(introProgression).toHaveLength(4);
+      // Should be more repetitive
+      expect(introProgression[0].chord).toEqual(introProgression[1].chord);
+    });
+
+    it('should apply secondary dominants in verse if length >= 4', () => {
+      const verseProgression = generateChordProgression(60, 'rock', 'major', 4, 'verse');
+      // Progression index 2 (bar 3) should be modified to II major (dominant 7th)
+      expect(verseProgression[2].type).toBe('7th');
+    });
   });
 
   describe('generateHarmonyNotes', () => {

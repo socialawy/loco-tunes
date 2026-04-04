@@ -1,6 +1,6 @@
 // Drum pattern generation for different genres
 
-import type { Genre, Note } from '@/types/music';
+import type { Genre, Note, SectionType } from '@/types/music';
 
 // Drum MIDI note mapping (General MIDI standard)
 export const DRUM_MIDI = {
@@ -122,15 +122,32 @@ export function generateDrumNotes(
   bpm: number,
   numBars: number,
   beatsPerBar: number = 4,
-  stepsPerBeat: number = 2
+  stepsPerBeat: number = 2,
+  sectionType: SectionType = 'verse'
 ): Note[] {
   const notes: Note[] = [];
   const pattern = DRUM_PATTERNS[genre] || DRUM_PATTERNS.electronic;
   const stepsPerBar = beatsPerBar * stepsPerBeat;
   const stepDuration = (60 / bpm) / stepsPerBeat;
   
+  // Adjust pattern density based on section
+  const shouldPlayHit = (hit: DrumPattern) => {
+    if (sectionType === 'intro' || sectionType === 'outro') {
+      // Very sparse
+      return hit.drum === 'kick' || hit.drum === 'hihatClosed' || hit.drum === 'ride';
+    } else if (sectionType === 'verse') {
+      // Normal but less busy
+      if (hit.drum === 'crash' || hit.drum === 'hihatOpen') return false;
+      return true;
+    }
+    // Chorus: full density
+    return true;
+  };
+
   for (let bar = 0; bar < numBars; bar++) {
     for (const hit of pattern) {
+      if (!shouldPlayHit(hit)) continue;
+
       // Add variation based on bar position
       let velocity = hit.velocity;
       const randomVariation = 0.9 + Math.random() * 0.2;
@@ -144,7 +161,15 @@ export function generateDrumNotes(
         }
       }
       
-      const startTime = bar * (60 / bpm) * beatsPerBar + hit.step * stepDuration;
+      // Swing timing for jazz (delaying the off-beat), or slight syncopation for electronic
+      let timeOffset = 0;
+      if (genre === 'jazz' && hit.step % 2 !== 0) {
+        timeOffset = stepDuration * 0.33; // Swing off-beat by ~33%
+      } else if (genre === 'electronic' && hit.step % 4 !== 0 && Math.random() < 0.2) {
+        timeOffset = stepDuration * 0.25; // Slight off-beat syncopation
+      }
+
+      const startTime = bar * (60 / bpm) * beatsPerBar + hit.step * stepDuration + timeOffset;
       
       notes.push({
         pitch: DRUM_MIDI[hit.drum],

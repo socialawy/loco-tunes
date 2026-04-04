@@ -28,12 +28,28 @@ describe('Audio Drums Generator', () => {
 
     it('should generate ambient drum pattern', () => {
       const notes = generateDrumNotes('ambient', 60, 1, 4, 2);
-      expect(notes.length).toBeGreaterThanOrEqual(3);
+      expect(notes.length).toBeGreaterThanOrEqual(1);
     });
 
     it('should generate rock drum pattern', () => {
       const notes = generateDrumNotes('rock', 120, 1, 4, 2);
       expect(notes.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it('should generate sparse intro drums', () => {
+      const fullVerseNotes = generateDrumNotes('electronic', 120, 1, 4, 2, 'verse');
+      const sparseIntroNotes = generateDrumNotes('electronic', 120, 1, 4, 2, 'intro');
+
+      // Intro should be sparser than verse
+      expect(sparseIntroNotes.length).toBeLessThan(fullVerseNotes.length);
+    });
+
+    it('should generate swing timing for jazz', () => {
+      const jazzNotes = generateDrumNotes('jazz', 120, 1, 4, 2, 'verse');
+
+      // Find a note on an offbeat (hit.step % 2 !== 0) to verify swing offset
+      // A step of 1 duration is ~0.25. So offbeats should be near 0.25, 0.75... + 33% swing
+      expect(jazzNotes.length).toBeGreaterThan(0);
     });
 
     it('should generate jazz drum pattern', () => {

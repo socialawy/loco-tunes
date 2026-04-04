@@ -6,6 +6,7 @@ import {
   Note,
   Chord,
   STEM_COLORS,
+  SectionType,
 } from '@/types/music';
 import { getAudioEngine } from './engine';
 import {
@@ -43,17 +44,84 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
   const beatDuration = 60 / bpm;
   const numBars = Math.ceil(duration / (beatsPerBar * beatDuration));
   
-  // Generate chord progression
-  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  // Generate sections
+  // Assuming a typical structure: intro (4) -> verse (8) -> chorus (8) -> verse (8) -> chorus (8) -> outro (4)
+  // We'll calculate how many blocks of bars we have and assign them.
+  const sections: { type: SectionType; startBar: number; numBars: number }[] = [];
+  let currentBar = 0;
   
-  // Extract chord roots for melody generation
-  const chordRoots = chords.map(c => c.chord[0]);
-  
-  // Generate all stems
-  const drumsNotes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
-  const bassNotes = generateBassNotes(chords, beatsPerBar, bpm, genre);
-  const melodyNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
-  const harmonyNotes = generateHarmonyNotes(chords, beatsPerBar, bpm);
+  const addSection = (type: SectionType, bars: number) => {
+    const barsToAdd = Math.min(bars, numBars - currentBar);
+    if (barsToAdd > 0) {
+      sections.push({ type, startBar: currentBar, numBars: barsToAdd });
+      currentBar += barsToAdd;
+    }
+  };
+
+  // Simple logic to distribute total bars into sections
+  if (numBars <= 8) {
+    addSection('verse', numBars);
+  } else if (numBars <= 16) {
+    addSection('intro', 4);
+    addSection('chorus', numBars - 4);
+  } else {
+    addSection('intro', 4);
+    let isVerse = true;
+    while (currentBar < numBars - 4) {
+      addSection(isVerse ? 'verse' : 'chorus', 8);
+      isVerse = !isVerse;
+    }
+    addSection('outro', numBars - currentBar);
+  }
+
+  // Generate sections
+  let chords: ReturnType<typeof generateChordProgression> = [];
+  let drumsNotes: Note[] = [];
+  let bassNotes: Note[] = [];
+  let melodyNotes: Note[] = [];
+  let harmonyNotes: Note[] = [];
+
+  for (const section of sections) {
+    // Generate section chords
+    const sectionChords = generateChordProgression(rootMidi, genre, scale, section.numBars, section.type);
+
+    // Shift the bars in chords array to absolute bar positions
+    const shiftedChords = sectionChords.map(c => ({
+      ...c,
+      bar: c.bar + section.startBar
+    }));
+    chords.push(...shiftedChords);
+
+    // Section roots
+    const sectionRoots = sectionChords.map(c => c.chord[0]);
+
+    // Drums
+    const sectionDrums = generateDrumNotes(genre, bpm, section.numBars, beatsPerBar, 2, section.type);
+    const sectionStartTime = section.startBar * beatsPerBar * beatDuration;
+
+    // Shift drum notes
+    const shiftedDrums = sectionDrums.map(n => ({
+      ...n,
+      startTime: n.startTime + sectionStartTime
+    }));
+    drumsNotes.push(...shiftedDrums);
+
+    // Bass
+    const sectionBass = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
+    bassNotes.push(...sectionBass);
+
+    // Melody
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const shiftedMelody = sectionMelody.map(n => ({
+      ...n,
+      startTime: n.startTime + sectionStartTime
+    }));
+    melodyNotes.push(...shiftedMelody);
+
+    // Harmony
+    const sectionHarmony = generateHarmonyNotes(shiftedChords, beatsPerBar, bpm);
+    harmonyNotes.push(...sectionHarmony);
+  }
   
   // Create stem objects
   const stems: Stem[] = [
@@ -86,6 +154,7 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     params,
     stems,
     duration: actualDuration,
+    sections,
     createdAt: new Date(),
   };
 }
@@ -101,23 +170,42 @@ export async function regenerateStem(
   const beatDuration = 60 / bpm;
   const numBars = Math.ceil(track.duration / (beatsPerBar * beatDuration));
   
+  const sections = track.sections || [{ type: 'verse' as SectionType, startBar: 0, numBars }];
+
   let notes: Note[] = [];
-  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
-  const chordRoots = chords.map(c => c.chord[0]);
-  
-  switch (stemType) {
-    case 'drums':
-      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
-      break;
-    case 'bass':
-      notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
-      break;
-    case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, complexity, chordRoots);
-      break;
-    case 'harmony':
-      notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
-      break;
+  let allChords: ReturnType<typeof generateChordProgression> = [];
+
+  for (const section of sections) {
+    const sectionChords = generateChordProgression(rootMidi, genre, scale, section.numBars, section.type);
+    const shiftedChords = sectionChords.map(c => ({
+      ...c,
+      bar: c.bar + section.startBar
+    }));
+    allChords.push(...shiftedChords);
+
+    const sectionRoots = sectionChords.map(c => c.chord[0]);
+    const sectionStartTime = section.startBar * beatsPerBar * beatDuration;
+
+    let sectionNotes: Note[] = [];
+
+    switch (stemType) {
+      case 'drums':
+        sectionNotes = generateDrumNotes(genre, bpm, section.numBars, beatsPerBar, 2, section.type)
+          .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
+        break;
+      case 'bass':
+        sectionNotes = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
+        break;
+      case 'melody':
+        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type)
+          .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
+        break;
+      case 'harmony':
+        sectionNotes = generateHarmonyNotes(shiftedChords, beatsPerBar, bpm);
+        break;
+    }
+
+    notes.push(...sectionNotes);
   }
   
   const engine = getAudioEngine();
@@ -161,19 +249,22 @@ export async function generateStemVariation(
   // Add some variation by adjusting complexity
   const variedComplexity = Math.max(0, Math.min(1, complexity + (Math.random() - 0.5) * 0.3));
   
-  const chords = generateChordProgression(rootMidi, genre, scale, numBars);
+  // For variation, we assume it's one big verse for simplicity,
+  // or we can recreate a single block.
+  const sectionType = 'verse';
+  const chords = generateChordProgression(rootMidi, genre, scale, numBars, sectionType);
   const chordRoots = chords.map(c => c.chord[0]);
   let notes: Note[] = [];
   
   switch (stem.type) {
     case 'drums':
-      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar);
+      notes = generateDrumNotes(genre, bpm, numBars, beatsPerBar, 2, sectionType);
       break;
     case 'bass':
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);

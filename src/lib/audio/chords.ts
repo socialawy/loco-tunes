@@ -1,7 +1,7 @@
 // Chord progression and harmony generation
 
 import { SCALES, CHORD_PROGRESSIONS, NOTE_NAMES } from '@/types/music';
-import type { Genre, Note } from '@/types/music';
+import type { Genre, Note, SectionType } from '@/types/music';
 
 // Get the frequency of a MIDI note
 export function midiToFrequency(midi: number): number {
@@ -47,11 +47,30 @@ export function generateChordProgression(
   rootMidi: number,
   genre: Genre,
   scaleName: string,
-  numBars: number
+  numBars: number,
+  sectionType: SectionType = 'verse'
 ): { chord: number[]; bar: number; type: string }[] {
-  const progression = CHORD_PROGRESSIONS[genre] || CHORD_PROGRESSIONS.electronic;
+  const baseProgression = CHORD_PROGRESSIONS[genre] || CHORD_PROGRESSIONS.electronic;
   const scale = getScale(rootMidi, scaleName);
   
+  // Create variations based on section
+  let progression = [...baseProgression];
+  if (sectionType === 'chorus') {
+    // Chorus: Often starts on the I or IV and feels more open/resolved
+    progression = progression.length > 0 ? [...progression] : [[0, 0], [3, 0], [4, 0], [0, 0]];
+  } else if (sectionType === 'intro' || sectionType === 'outro') {
+    // Simpler, repetitive progression
+    progression = progression.length > 0 ? [progression[0], progression[0], progression[0], progression[0]] : [[0, 0]];
+  } else if (sectionType === 'verse') {
+    // Can include borrowed chords or secondary dominants (e.g. V/V or borrowed iv)
+    if (genre === 'jazz' || genre === 'electronic' || genre === 'rock') {
+       if (progression.length >= 4) {
+         // Substitute 3rd chord with a secondary dominant (V of V -> scale degree 1 (II) major)
+         progression[2] = [1, 1]; // II major
+       }
+    }
+  }
+
   const chords: { chord: number[]; bar: number; type: string }[] = [];
   
   for (let bar = 0; bar < numBars; bar++) {
@@ -75,6 +94,10 @@ export function generateChordProgression(
     
     if (modifier === -1) chordType = 'minor';
     if (modifier === 1) chordType = 'major';
+    // Secondary dominant resolution for II major -> V
+    if (modifier === 1 && scaleDegree === 1 && chordType === 'major') {
+      chordType = '7th'; // V/V is usually a dominant 7th
+    }
     if (genre === 'jazz') chordType = '7th';
     
     const chordNotes = generateChord(chordRoot, chordType, 3);
