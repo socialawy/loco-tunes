@@ -18,6 +18,7 @@ import {
 import { generateDrumNotes } from './drums';
 import { generateMelodyNotes } from './melody';
 import { v4 as generateId } from 'uuid';
+import { loadMotifData } from '../storage';
 
 // Helper types for hardware detection
 interface ExtendedNavigator extends Navigator {
@@ -34,8 +35,14 @@ interface ExtendedPerformance extends Performance {
 }
 
 export async function generateTrack(params: GenerationParams): Promise<Track> {
-  const { bpm, genre, mood, duration, key, scale, complexity } = params;
+  const { bpm, genre, mood, duration, key, scale, complexity, savedMotifId } = params;
   
+  // Load saved motif if requested
+  let savedMotif;
+  if (savedMotifId) {
+    savedMotif = await loadMotifData(savedMotifId);
+  }
+
   // Convert key to MIDI note number
   const rootMidi = noteToMidi(key, 4);
   
@@ -111,7 +118,7 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     bassNotes.push(...sectionBass);
 
     // Melody
-    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, savedMotif);
     const shiftedMelody = sectionMelody.map(n => ({
       ...n,
       startTime: n.startTime + sectionStartTime
@@ -164,7 +171,12 @@ export async function regenerateStem(
   track: Track,
   stemType: StemType
 ): Promise<Stem> {
-  const { bpm, genre, mood, key, scale, complexity } = track.params;
+  const { bpm, genre, mood, key, scale, complexity, savedMotifId } = track.params;
+
+  let savedMotif;
+  if (savedMotifId) {
+    savedMotif = await loadMotifData(savedMotifId);
+  }
   const rootMidi = noteToMidi(key, 4);
   const beatsPerBar = 4;
   const beatDuration = 60 / bpm;
@@ -197,7 +209,7 @@ export async function regenerateStem(
         sectionNotes = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
         break;
       case 'melody':
-        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type)
+        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, savedMotif)
           .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
         break;
       case 'harmony':
@@ -235,7 +247,12 @@ export async function generateStemVariation(
   stem: Stem,
   params: GenerationParams
 ): Promise<Stem> {
-  const { bpm, genre, mood, key, scale, complexity } = params;
+  const { bpm, genre, mood, key, scale, complexity, savedMotifId } = params;
+
+  let savedMotif;
+  if (savedMotifId) {
+    savedMotif = await loadMotifData(savedMotifId);
+  }
   const rootMidi = noteToMidi(key, 4);
   const beatsPerBar = 4;
   const beatDuration = 60 / bpm;
@@ -264,7 +281,7 @@ export async function generateStemVariation(
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType, savedMotif);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);
