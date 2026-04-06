@@ -15,7 +15,8 @@ import {
 import { useMusicStore } from '@/stores/musicStore';
 
 import type { Genre, Mood } from '@/types/music';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, Trash2 } from 'lucide-react';
+import { useEffect } from 'react';
 
 const GENRES: Genre[] = ['electronic', 'hiphop', 'ambient', 'rock', 'jazz'];
 const MOODS: Mood[] = ['happy', 'sad', 'energetic', 'calm', 'dark', 'uplifting'];
@@ -63,8 +64,15 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    savedMotifs,
+    fetchMotifs,
+    deleteMotif,
   } = useMusicStore();
   
+  useEffect(() => {
+    fetchMotifs();
+  }, [fetchMotifs]);
+
   const handleGenerate = () => {
     generateTrack();
   };
@@ -239,6 +247,60 @@ export function SimpleMode() {
         )}
       </div>
       
+      {/* Saved Motif Selection */}
+      {savedMotifs.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-gray-300">Use Saved Motif</Label>
+            {params.savedMotifId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setParams({ savedMotifId: undefined })}
+                className="h-6 text-xs text-gray-400 hover:text-white"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Select
+              value={params.savedMotifId || "none"}
+              onValueChange={(value) => setParams({ savedMotifId: value === "none" ? undefined : value })}
+            >
+              <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white flex-1">
+                <SelectValue placeholder="Select a motif..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+                <SelectItem value="none" className="text-gray-400">
+                  None (Generate freely)
+                </SelectItem>
+                {savedMotifs.map((motif) => (
+                  <SelectItem
+                    key={motif.id}
+                    value={motif.id}
+                    className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+                  >
+                    {motif.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {params.savedMotifId && (
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={() => deleteMotif(params.savedMotifId!)}
+                className="shrink-0"
+                title="Delete this motif"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Complexity Slider */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">

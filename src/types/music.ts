@@ -17,6 +17,19 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  savedMotifId?: string; // Optional ID of a saved motif to use
+}
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: {
+    interval: number; // relative pitch to the first note (0 for the first note)
+    duration: number; // duration in seconds relative to beat
+    startTimeOffset: number; // offset from start of motif
+  }[];
+  originalBpm: number;
+  createdAt: string;
 }
 
 export interface Note {
@@ -90,6 +103,9 @@ export interface MusicState {
   // Generation params
   params: GenerationParams;
   
+  // Motifs
+  savedMotifs: Motif[];
+
   // Current track
   currentTrack: Track | null;
   

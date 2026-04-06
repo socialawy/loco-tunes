@@ -14,13 +14,16 @@ import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
-import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
-import type { Project } from '@/types/music';
+import { saveProject, loadProject, deleteProject, getProjects, saveMotifData, getMotifsData, deleteMotifData } from '@/lib/storage';
+import type { Project, Motif } from '@/types/music';
 
 interface MusicStore {
   // Generation params
   params: GenerationParams;
   
+  // Motifs
+  savedMotifs: Motif[];
+
   // Current track
   currentTrack: Track | null;
   
@@ -68,6 +71,11 @@ interface MusicStore {
   loadProjectData: (id: string) => Promise<void>;
   deleteProjectData: (id: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
+
+  // Motif Actions
+  fetchMotifs: () => Promise<void>;
+  saveMotif: () => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
 }
 
 // Variables for auto-save debounce
@@ -77,6 +85,7 @@ const AUTO_SAVE_INTERVAL = 10000; // 10 seconds
 export const useMusicStore = create<MusicStore>((set, get) => ({
   // Initial state
   params: DEFAULT_PARAMS,
+  savedMotifs: [],
   currentTrack: null,
   projects: [],
   currentProjectId: null,
@@ -552,6 +561,75 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     } catch (err) {
       console.error('Failed to delete project:', err);
       toast.error('Failed to delete project');
+    }
+  },
+
+  // --- Motif Actions ---
+
+  fetchMotifs: async () => {
+    try {
+      const motifs = await getMotifsData();
+      set({ savedMotifs: motifs });
+    } catch (err) {
+      console.error('Failed to fetch motifs:', err);
+    }
+  },
+
+  saveMotif: async () => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+
+    const melodyStem = currentTrack.stems.find(s => s.type === 'melody');
+    if (!melodyStem || melodyStem.notes.length === 0) {
+      toast.error('No melody stem found to extract motif');
+      return;
+    }
+
+    try {
+      // Extract the first up to 8 notes of the melody
+      const motifNotes = melodyStem.notes.slice(0, 8);
+      const firstNote = motifNotes[0];
+      const startOffset = firstNote.startTime;
+
+      // Normalize notes relative to the first note's pitch and start time
+      const normalizedNotes = motifNotes.map(n => ({
+        interval: n.pitch - firstNote.pitch,
+        duration: n.duration,
+        startTimeOffset: n.startTime - startOffset,
+      }));
+
+      const motifId = crypto.randomUUID();
+      const newMotif: Motif = {
+        id: motifId,
+        name: `Motif from ${currentTrack.params.genre} (${new Date().toLocaleTimeString()})`,
+        notes: normalizedNotes,
+        originalBpm: currentTrack.params.bpm,
+        createdAt: new Date().toISOString(),
+      };
+
+      await saveMotifData(newMotif);
+      await get().fetchMotifs();
+      toast.success('Melody motif saved!');
+    } catch (err) {
+      console.error('Failed to save motif:', err);
+      toast.error('Failed to save motif');
+    }
+  },
+
+  deleteMotif: async (id: string) => {
+    try {
+      await deleteMotifData(id);
+
+      const { params } = get();
+      if (params.savedMotifId === id) {
+        set({ params: { ...params, savedMotifId: undefined } });
+      }
+
+      await get().fetchMotifs();
+      toast.success('Motif deleted');
+    } catch (err) {
+      console.error('Failed to delete motif:', err);
+      toast.error('Failed to delete motif');
     }
   },
 }));

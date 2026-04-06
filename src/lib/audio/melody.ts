@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -66,7 +66,8 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -90,7 +91,70 @@ export function generateMelodyNotes(
   let barCount = 0;
   let noteIndex = 0;
   
-  while (currentTime < numBars * 4 * beatDuration) {
+  const totalDuration = numBars * 4 * beatDuration;
+
+  // Function to map a calculated pitch to the nearest scale note
+  const snapToScale = (targetPitch: number) => {
+    return extendedScale.reduce((prev, curr) =>
+      Math.abs(curr - targetPitch) < Math.abs(prev - targetPitch) ? curr : prev
+    );
+  };
+
+  // If we have a motif and we are generating a verse or chorus, let's inject the motif
+  // at the beginning of some bars (e.g., every 2nd or 4th bar depending on complexity).
+  const injectMotifInterval = complexity < 0.5 ? 2 : 4; // in bars
+  let nextMotifBar = 0;
+
+  while (currentTime < totalDuration) {
+    const currentBar = Math.floor(currentTime / (4 * beatDuration));
+
+    // Check if we should inject the motif here
+    if (motif && motif.notes.length > 0 && currentBar >= nextMotifBar && (sectionType === 'verse' || sectionType === 'chorus')) {
+       // Snap the first note of the motif to the nearest chord root or current scale root
+       const basePitch = chordRoots[currentBar % chordRoots.length] || extendedScale[currentScaleIndex];
+       const motifStartTime = currentBar * 4 * beatDuration;
+
+       // Factor in original BPM vs current BPM to stretch/squash the motif duration
+       const bpmRatio = motif.originalBpm / bpm;
+
+       let motifEnd = motifStartTime;
+
+       for (const mNote of motif.notes) {
+          const startTime = motifStartTime + (mNote.startTimeOffset * bpmRatio);
+          const duration = mNote.duration * bpmRatio;
+
+          if (startTime + duration > totalDuration) break;
+
+          const targetPitch = basePitch + mNote.interval;
+          const pitch = snapToScale(targetPitch);
+
+          notes.push({
+            pitch,
+            velocity: 80 + (Math.random() * 20),
+            startTime,
+            duration
+          });
+
+          motifEnd = Math.max(motifEnd, startTime + duration);
+       }
+
+       // Update current time and index to resume generation after motif
+       currentTime = motifEnd;
+       nextMotifBar = currentBar + injectMotifInterval;
+
+       // Snap currentScaleIndex roughly to the last note of the motif to continue smoothly
+       if (notes.length > 0) {
+           const lastNotePitch = notes[notes.length - 1].pitch;
+           const index = extendedScale.findIndex(p => p >= lastNotePitch);
+           if (index !== -1) currentScaleIndex = index;
+       }
+
+       // Align currentTime to the next grid interval
+       const gridValue = 0.25 * beatDuration;
+       currentTime = Math.ceil(currentTime / gridValue) * gridValue;
+       continue;
+    }
+
     const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
     const patternIndex = noteIndex % selectedPattern.length;
     const duration = selectedPattern[patternIndex] * beatDuration;
