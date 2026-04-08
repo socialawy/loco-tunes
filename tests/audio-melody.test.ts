@@ -73,6 +73,31 @@ describe('Audio Melody Generator', () => {
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
     });
+
+    it('should generate notes using a provided motif', () => {
+      const motif = {
+        id: 'test-motif',
+        name: 'Test Motif',
+        notes: [
+          { pitchOffset: 0, velocity: 100, startTimeOffset: 0, duration: 1 },
+          { pitchOffset: 4, velocity: 90, startTimeOffset: 1, duration: 1 } // Major third
+        ],
+        originalBpm: 120,
+        originalGenre: 'electronic' as any,
+        createdAt: new Date().toISOString(),
+      };
+
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 1, 0.5, [], 'verse', motif);
+
+      // We requested 1 bar = 4 beats. The motif length is effectively 4 beats
+      // due to the minimum length constraint. It should generate the notes
+      // once since the duration is 4 beats.
+      expect(notes.length).toBeGreaterThan(0);
+      expect(notes[0].pitch).toBe(60); // Root
+      expect(notes[0].velocity).toBe(100);
+      expect(notes[1].pitch).toBe(64); // Root + 4
+      expect(notes[1].velocity).toBe(90);
+    });
   });
 
   describe('generateArpeggioNotes', () => {
