@@ -17,6 +17,23 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  motif?: Motif;
+}
+
+export interface MotifNote {
+  pitchOffset: number; // relative to root note
+  velocity: number; // 0-127
+  startTimeOffset: number; // in beats
+  duration: number; // in beats
+}
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: MotifNote[];
+  originalBpm: number;
+  originalGenre: Genre;
+  createdAt: string;
 }
 
 export interface Note {
@@ -103,6 +120,9 @@ export interface MusicState {
   // Hardware
   hardwareTier: HardwareTier;
   
+  // Motifs
+  savedMotifs: Motif[];
+
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
@@ -120,6 +140,11 @@ export interface MusicState {
   exportWav: () => void;
   exportMidi: () => void;
   setMode: (mode: 'simple' | 'advanced') => void;
+
+  // Motif Actions
+  fetchMotifs: () => Promise<void>;
+  saveMotif: () => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
 }
 
 // Scale definitions (semitone intervals from root)

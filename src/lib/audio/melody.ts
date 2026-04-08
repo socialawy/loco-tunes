@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -66,11 +66,51 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
+
+  if (motif && motif.notes.length > 0) {
+    let currentTime = 0;
+    const targetDuration = numBars * 4 * beatDuration;
+    let motifIteration = 0;
+
+    // Loop the motif until the target duration is reached
+    while (currentTime < targetDuration) {
+      // Find the length of the motif in beats
+      const lastNote = motif.notes[motif.notes.length - 1];
+      const motifLengthInBeats = Math.ceil(lastNote.startTimeOffset + lastNote.duration);
+      // Ensure minimum motif length to avoid infinite loops if data is weird
+      const iterationLengthBeats = Math.max(motifLengthInBeats, 4); // usually 4 bars
+      const iterationLengthSeconds = iterationLengthBeats * beatDuration;
+
+      for (const mNote of motif.notes) {
+        const noteStartTime = currentTime + mNote.startTimeOffset * beatDuration;
+        const noteDuration = mNote.duration * beatDuration;
+
+        if (noteStartTime >= targetDuration) break;
+
+        // Optionally apply scale constraints to pitch offset if needed
+        // but for a strict motif replay, we can just use root + offset
+        let pitch = rootMidi + mNote.pitchOffset;
+
+        notes.push({
+          pitch,
+          velocity: mNote.velocity,
+          startTime: noteStartTime,
+          duration: noteDuration,
+        });
+      }
+
+      currentTime += iterationLengthSeconds;
+      motifIteration++;
+    }
+
+    return notes;
+  }
   
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
