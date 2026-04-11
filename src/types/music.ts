@@ -17,6 +17,15 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  useSavedMotifId?: string;
+}
+
+export interface SavedMotif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  createdAt: string;
 }
 
 export interface Note {

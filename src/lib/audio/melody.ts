@@ -66,7 +66,9 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motifNotes?: Note[],
+  originalBpm?: number
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -90,6 +92,48 @@ export function generateMelodyNotes(
   let barCount = 0;
   let noteIndex = 0;
   
+  let useMotif = false;
+  let motifEndTime = 0;
+
+  if (motifNotes && motifNotes.length > 0 && originalBpm) {
+    const timeRatio = originalBpm / bpm;
+    // Inject motif for the first part
+    for (const note of motifNotes) {
+      const startTime = note.startTime * timeRatio;
+      const duration = note.duration * timeRatio;
+
+      if (startTime > numBars * 4 * beatDuration) break;
+
+      // Quantize pitch to the new scale (find nearest in extendedScale)
+      let nearestPitch = extendedScale[0];
+      let minDiff = Math.abs(note.pitch - nearestPitch);
+
+      for (const pitch of extendedScale) {
+        const diff = Math.abs(note.pitch - pitch);
+        if (diff < minDiff) {
+          minDiff = diff;
+          nearestPitch = pitch;
+        }
+      }
+
+      notes.push({
+        pitch: nearestPitch,
+        velocity: note.velocity,
+        startTime: startTime,
+        duration: duration,
+      });
+      motifEndTime = Math.max(motifEndTime, startTime + duration);
+    }
+    useMotif = true;
+    currentTime = motifEndTime;
+    // Find the current scale index of the last note to continue smoothly
+    if (notes.length > 0) {
+      const lastPitch = notes[notes.length - 1].pitch;
+      currentScaleIndex = extendedScale.indexOf(lastPitch);
+      if (currentScaleIndex === -1) currentScaleIndex = Math.floor(extendedScale.length / 2);
+    }
+  }
+
   while (currentTime < numBars * 4 * beatDuration) {
     const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
     const patternIndex = noteIndex % selectedPattern.length;

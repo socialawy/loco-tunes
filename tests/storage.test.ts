@@ -5,10 +5,14 @@ import {
   getProjects,
   deleteProject,
   exportProject,
-  importProject
+  importProject,
+  saveMotif,
+  loadMotif,
+  getMotifs,
+  deleteMotif
 } from '@/lib/storage';
 import * as idbKeyval from 'idb-keyval';
-import type { Project, Track, EffectSettings } from '@/types/music';
+import type { Project, Track, EffectSettings, SavedMotif } from '@/types/music';
 
 // Mock idb-keyval completely
 vi.mock('idb-keyval', () => {
@@ -203,6 +207,54 @@ describe('Storage Utilities', () => {
       const file = new File(['{}'], 'invalid.json', { type: 'application/json' });
 
       await expect(importProject(file)).rejects.toThrow('Invalid project file format');
+    });
+  });
+
+  describe('Motif Storage', () => {
+    const mockMotif: SavedMotif = {
+      id: 'test-motif-1',
+      name: 'Test Motif',
+      notes: [{ pitch: 60, velocity: 80, startTime: 0, duration: 1 }],
+      originalBpm: 120,
+      createdAt: new Date().toISOString(),
+    };
+
+    it('should save and load a motif', async () => {
+      await saveMotif(mockMotif);
+      const loaded = await loadMotif(mockMotif.id);
+      expect(loaded).toBeDefined();
+      expect(loaded?.id).toBe(mockMotif.id);
+      expect(loaded?.name).toBe(mockMotif.name);
+      expect(loaded?.notes.length).toBe(1);
+    });
+
+    it('should return undefined for non-existent motif', async () => {
+      const result = await loadMotif('non-existent-id');
+      expect(result).toBeUndefined();
+    });
+
+    it('should get all motifs sorted by createdAt descending', async () => {
+      const olderMotif: SavedMotif = {
+        ...mockMotif,
+        id: 'older-motif',
+        createdAt: new Date(Date.now() - 100000).toISOString(),
+      };
+
+      await saveMotif(olderMotif);
+      await saveMotif(mockMotif);
+
+      const motifs = await getMotifs();
+      expect(motifs.length).toBeGreaterThanOrEqual(2);
+      expect(motifs[0].id).toBe(mockMotif.id); // Newer first
+      expect(motifs[1].id).toBe(olderMotif.id);
+    });
+
+    it('should delete a motif', async () => {
+      await saveMotif(mockMotif);
+      await deleteMotif(mockMotif.id);
+
+      const loaded = await loadMotif(mockMotif.id);
+      expect(loaded).toBeUndefined();
     });
   });
 });
