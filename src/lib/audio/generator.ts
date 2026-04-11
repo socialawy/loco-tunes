@@ -9,6 +9,7 @@ import {
   SectionType,
 } from '@/types/music';
 import { getAudioEngine } from './engine';
+import { loadMotif } from '@/lib/storage';
 import {
   noteToMidi,
   generateChordProgression,
@@ -34,7 +35,7 @@ interface ExtendedPerformance extends Performance {
 }
 
 export async function generateTrack(params: GenerationParams): Promise<Track> {
-  const { bpm, genre, mood, duration, key, scale, complexity } = params;
+  const { bpm, genre, mood, duration, key, scale, complexity, useSavedMotifId } = params;
   
   // Convert key to MIDI note number
   const rootMidi = noteToMidi(key, 4);
@@ -74,6 +75,17 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     addSection('outro', numBars - currentBar);
   }
 
+  // Load motif if provided
+  let motifNotes: Note[] | undefined;
+  let originalBpm: number | undefined;
+  if (useSavedMotifId) {
+    const motif = await loadMotif(useSavedMotifId);
+    if (motif) {
+      motifNotes = motif.notes;
+      originalBpm = motif.originalBpm;
+    }
+  }
+
   // Generate sections
   let chords: ReturnType<typeof generateChordProgression> = [];
   let drumsNotes: Note[] = [];
@@ -111,12 +123,17 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     bassNotes.push(...sectionBass);
 
     // Melody
-    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, motifNotes, originalBpm);
     const shiftedMelody = sectionMelody.map(n => ({
       ...n,
       startTime: n.startTime + sectionStartTime
     }));
     melodyNotes.push(...shiftedMelody);
+
+    // Only apply the motif to the first generated section (the intro or verse)
+    if (motifNotes) {
+      motifNotes = undefined;
+    }
 
     // Harmony
     const sectionHarmony = generateHarmonyNotes(shiftedChords, beatsPerBar, bpm);
@@ -197,7 +214,7 @@ export async function regenerateStem(
         sectionNotes = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
         break;
       case 'melody':
-        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type)
+        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, undefined, undefined)
           .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
         break;
       case 'harmony':

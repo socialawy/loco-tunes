@@ -73,6 +73,27 @@ describe('Audio Melody Generator', () => {
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
     });
+
+    it('should incorporate SavedMotif correctly', () => {
+      const originalBpm = 100;
+      const motifNotes = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 1 },
+        { pitch: 64, velocity: 80, startTime: 1, duration: 1 }
+      ];
+
+      const newBpm = 120;
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', newBpm, 4, 0.5, [], 'verse', motifNotes, originalBpm);
+
+      expect(notes.length).toBeGreaterThanOrEqual(2);
+
+      // The motif should be injected at the start with adjusted times
+      const ratio = originalBpm / newBpm; // 100 / 120 = 0.8333...
+      expect(notes[0].startTime).toBeCloseTo(0 * ratio);
+      expect(notes[0].duration).toBeCloseTo(1 * ratio);
+
+      expect(notes[1].startTime).toBeCloseTo(1 * ratio);
+      expect(notes[1].duration).toBeCloseTo(1 * ratio);
+    });
   });
 
   describe('generateArpeggioNotes', () => {

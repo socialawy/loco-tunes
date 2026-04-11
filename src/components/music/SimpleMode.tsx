@@ -63,8 +63,14 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    savedMotifs,
+    fetchMotifs,
   } = useMusicStore();
   
+  React.useEffect(() => {
+    fetchMotifs();
+  }, [fetchMotifs]);
+
   const handleGenerate = () => {
     generateTrack();
   };
@@ -257,6 +263,33 @@ export function SimpleMode() {
         />
       </div>
       
+      {/* Saved Motif Selection */}
+      <div className="space-y-2">
+        <Label className="text-gray-300">Use Saved Motif (Memory)</Label>
+        <Select
+          value={params.useSavedMotifId || 'none'}
+          onValueChange={(value) => setParams({ useSavedMotifId: value === 'none' ? undefined : value })}
+        >
+          <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+            <SelectValue placeholder="None" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+            <SelectItem value="none" className="text-gray-400 hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]">
+              None (Generate new)
+            </SelectItem>
+            {savedMotifs.map((motif) => (
+              <SelectItem
+                key={motif.id}
+                value={motif.id}
+                className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+              >
+                {motif.name} ({new Date(motif.createdAt).toLocaleDateString()})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Generate Button */}
       <Button
         onClick={handleGenerate}

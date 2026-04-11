@@ -1,7 +1,8 @@
 import { get, set, keys, del } from 'idb-keyval';
-import type { Project, Track, Stem } from '@/types/music';
+import type { Project, Track, Stem, SavedMotif } from '@/types/music';
 
 const STORE_PREFIX = 'loco-tunes-project-';
+const STORE_PREFIX_MOTIF = 'loco-tunes-motif-';
 
 // Helper to sanitize AudioBuffer from track before saving or exporting
 function sanitizeTrackForStorage(track: Track): Track {
@@ -88,4 +89,32 @@ export async function importProject(file: File): Promise<Project> {
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsText(file);
   });
+}
+
+export async function saveMotif(motif: SavedMotif): Promise<void> {
+  await set(`${STORE_PREFIX_MOTIF}${motif.id}`, motif);
+}
+
+export async function loadMotif(id: string): Promise<SavedMotif | undefined> {
+  return await get<SavedMotif>(`${STORE_PREFIX_MOTIF}${id}`);
+}
+
+export async function getMotifs(): Promise<SavedMotif[]> {
+  const allKeys = await keys();
+  const motifKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith(STORE_PREFIX_MOTIF));
+
+  const motifs: SavedMotif[] = [];
+  for (const key of motifKeys) {
+    const motif = await get<SavedMotif>(key);
+    if (motif) {
+      motifs.push(motif);
+    }
+  }
+
+  // Sort by createdAt descending (newest first)
+  return motifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function deleteMotif(id: string): Promise<void> {
+  await del(`${STORE_PREFIX_MOTIF}${id}`);
 }
