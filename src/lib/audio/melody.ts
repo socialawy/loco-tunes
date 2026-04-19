@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -66,7 +66,8 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -90,6 +91,42 @@ export function generateMelodyNotes(
   let barCount = 0;
   let noteIndex = 0;
   
+  if (motif && motif.notes.length > 0) {
+    // Loop the motif pattern
+    const totalDuration = numBars * 4 * beatDuration;
+
+    // Find length of motif in beats
+    const lastMotifNote = motif.notes[motif.notes.length - 1];
+    const motifLengthBeats = Math.ceil(lastMotifNote.startTimeOffset + lastMotifNote.duration);
+    const motifLengthSeconds = motifLengthBeats * beatDuration;
+
+    let loopStartTime = 0;
+    while (loopStartTime < totalDuration) {
+      for (const motifNote of motif.notes) {
+        const startTime = loopStartTime + (motifNote.startTimeOffset * beatDuration);
+        const duration = motifNote.duration * beatDuration;
+
+        if (startTime >= totalDuration) break; // Don't generate past duration
+
+        // Determine pitch
+        let targetPitch = rootMidi + motifNote.pitchOffset;
+
+        // Find nearest scale note to ensure it stays in scale
+        const nearestPitch = [...extendedScale].sort((a, b) => Math.abs(a - targetPitch) - Math.abs(b - targetPitch))[0];
+
+        notes.push({
+          pitch: nearestPitch,
+          velocity: motifNote.velocity,
+          startTime: startTime,
+          duration: Math.min(duration, totalDuration - startTime)
+        });
+      }
+      loopStartTime += motifLengthSeconds;
+    }
+
+    return notes;
+  }
+
   while (currentTime < numBars * 4 * beatDuration) {
     const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
     const patternIndex = noteIndex % selectedPattern.length;

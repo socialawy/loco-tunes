@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { Motif } from '@/types/music';
 import {
   generateMelodyNotes,
   generateArpeggioNotes,
@@ -8,6 +9,42 @@ import {
 
 describe('Audio Melody Generator', () => {
   describe('generateMelodyNotes', () => {
+
+    it('should loop notes from a provided motif', () => {
+      const mockMotif: Motif = {
+        id: 'motif1',
+        name: 'Test Motif',
+        notes: [
+          { pitchOffset: 0, velocity: 100, startTimeOffset: 0, duration: 1 },
+          { pitchOffset: 4, velocity: 90, startTimeOffset: 1, duration: 1 }
+        ],
+        originalBpm: 120,
+        createdAt: '2023-01-01T00:00:00.000Z'
+      };
+
+      // 60 BPM = 1 beat per sec.
+      // Motif is 2 beats long.
+      // Generate 1 bar (4 beats). Should see motif repeated twice (4 notes).
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 60, 1, 0.5, [], 'verse', mockMotif);
+
+      expect(notes.length).toBe(4);
+      // First iteration
+      expect(notes[0].pitch).toBe(60);
+      expect(notes[0].startTime).toBe(0);
+      expect(notes[0].duration).toBe(1);
+
+      expect(notes[1].pitch).toBe(64);
+      expect(notes[1].startTime).toBe(1);
+      expect(notes[1].duration).toBe(1);
+
+      // Second iteration
+      expect(notes[2].pitch).toBe(60);
+      expect(notes[2].startTime).toBe(2);
+
+      expect(notes[3].pitch).toBe(64);
+      expect(notes[3].startTime).toBe(3);
+    });
+
     it('should generate notes for electronic genre', () => {
       const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 2, 0.5);
       expect(notes.length).toBeGreaterThan(0);

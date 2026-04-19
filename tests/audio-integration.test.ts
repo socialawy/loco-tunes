@@ -1,3 +1,24 @@
+vi.mock('idb-keyval', () => {
+  const store = new Map<string, any>();
+  return {
+    get: vi.fn((key: string) => Promise.resolve(store.get(key))),
+    set: vi.fn((key: string, val: any) => {
+      store.set(key, val);
+      return Promise.resolve();
+    }),
+    del: vi.fn((key: string) => {
+      store.delete(key);
+      return Promise.resolve();
+    }),
+    keys: vi.fn(() => Promise.resolve(Array.from(store.keys()))),
+    clear: vi.fn(() => {
+      store.clear();
+      return Promise.resolve();
+    }),
+    __store: store
+  };
+});
+
 import { describe, it, expect, vi } from 'vitest';
 import { generateTrack, regenerateStem, generateStemVariation, validateParams } from '@/lib/audio/generator';
 import type { GenerationParams, Track } from '@/types/music';

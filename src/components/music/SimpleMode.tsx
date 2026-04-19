@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useMusicStore } from '@/stores/musicStore';
+import { useEffect } from 'react';
 
 import type { Genre, Mood } from '@/types/music';
 import { Sparkles, Loader2 } from 'lucide-react';
@@ -63,7 +64,13 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    motifs,
+    fetchMotifs
   } = useMusicStore();
+
+  useEffect(() => {
+    fetchMotifs();
+  }, [fetchMotifs]);
   
   const handleGenerate = () => {
     generateTrack();
@@ -185,6 +192,43 @@ export function SimpleMode() {
         </div>
       </div>
       
+            {/* Motif Select */}
+      {motifs.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-gray-300">Use Saved Motif</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-gray-400 hover:text-white"
+              onClick={() => setParams({ motifId: undefined })}
+            >
+              Clear
+            </Button>
+          </div>
+          <Select
+            value={params.motifId || ''}
+            onValueChange={(value) => setParams({ motifId: value === 'none' ? undefined : value })}
+          >
+            <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+              <SelectValue placeholder="Select a saved melody to loop..." />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+              <SelectItem value="none" className="text-gray-400">None (Generate Random)</SelectItem>
+              {motifs.map((motif) => (
+                <SelectItem
+                  key={motif.id}
+                  value={motif.id}
+                  className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+                >
+                  {motif.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* BPM Slider */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
