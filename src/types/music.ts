@@ -10,6 +10,7 @@ export type StemType = 'drums' | 'bass' | 'melody' | 'harmony';
 
 export interface GenerationParams {
   prompt: string;
+  motifId?: string;
   bpm: number;
   genre: Genre;
   mood: Mood;
@@ -35,6 +36,21 @@ export interface Stem {
   solo: boolean;
   color: string;
   synthParams?: SynthParams;
+}
+
+export interface MotifNote {
+  pitchOffset: number; // Relative to root
+  velocity: number;
+  startTimeOffset: number; // in beats
+  duration: number; // in beats
+}
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: MotifNote[];
+  originalBpm: number;
+  createdAt: string;
 }
 
 export interface Track {
