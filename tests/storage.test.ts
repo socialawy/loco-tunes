@@ -5,10 +5,13 @@ import {
   getProjects,
   deleteProject,
   exportProject,
-  importProject
+  importProject,
+  saveMotif,
+  getMotifs,
+  deleteMotif
 } from '@/lib/storage';
 import * as idbKeyval from 'idb-keyval';
-import type { Project, Track, EffectSettings } from '@/types/music';
+import type { Project, Track, EffectSettings, Motif } from '@/types/music';
 
 // Mock idb-keyval completely
 vi.mock('idb-keyval', () => {
@@ -203,6 +206,54 @@ describe('Storage Utilities', () => {
       const file = new File(['{}'], 'invalid.json', { type: 'application/json' });
 
       await expect(importProject(file)).rejects.toThrow('Invalid project file format');
+    });
+  });
+
+  describe('Motif Storage', () => {
+    const mockMotif: Motif = {
+      id: 'motif1',
+      name: 'Test Motif',
+      notes: [{ pitch: 60, velocity: 100, startTime: 0, duration: 1 }],
+      originalBpm: 120,
+      createdAt: new Date().toISOString()
+    };
+
+    it('should save a motif', async () => {
+      await saveMotif(mockMotif);
+      expect(idbKeyval.set).toHaveBeenCalled();
+
+      const motifs = await getMotifs();
+      expect(motifs.length).toBe(1);
+      expect(motifs[0].id).toBe('motif1');
+    });
+
+    it('should retrieve all motifs sorted by createdAt descending', async () => {
+      const motif2 = {
+        ...mockMotif,
+        id: 'motif2',
+        createdAt: new Date(Date.now() + 1000).toISOString() // Newer
+      };
+
+      await saveMotif(mockMotif);
+      await saveMotif(motif2);
+
+      const motifs = await getMotifs();
+      expect(motifs.length).toBe(2);
+
+      // motif2 is newer, so it should be first
+      expect(motifs[0].id).toBe('motif2');
+      expect(motifs[1].id).toBe('motif1');
+    });
+
+    it('should delete a motif by id', async () => {
+      await saveMotif(mockMotif);
+      let motifs = await getMotifs();
+      expect(motifs.length).toBe(1);
+
+      await deleteMotif('motif1');
+
+      motifs = await getMotifs();
+      expect(motifs.length).toBe(0);
     });
   });
 });

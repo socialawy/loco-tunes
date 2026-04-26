@@ -17,6 +17,15 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  motifId?: string; // ID of saved motif to use
+}
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  createdAt: string;
 }
 
 export interface Note {
@@ -103,6 +112,10 @@ export interface MusicState {
   // Hardware
   hardwareTier: HardwareTier;
   
+  // Motifs
+  savedMotifs: Motif[];
+  selectedMotifId: string | null;
+
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
