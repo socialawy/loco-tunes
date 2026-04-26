@@ -5,6 +5,7 @@ import {
   generateCounterMelodyNotes,
   quantizeNotes
 } from '@/lib/audio/melody';
+import type { Motif } from '@/types/music';
 
 describe('Audio Melody Generator', () => {
   describe('generateMelodyNotes', () => {
@@ -72,6 +73,26 @@ describe('Audio Melody Generator', () => {
       // We just ensure they both produce valid arrays.
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
+    });
+
+    it('should generate notes using a motif if provided', () => {
+      const mockMotif: Motif = {
+        id: 'motif1',
+        name: 'Test',
+        notes: [
+          { pitch: 60, velocity: 100, startTime: 0, duration: 0.5 },
+          { pitch: 64, velocity: 100, startTime: 0.5, duration: 0.5 }
+        ],
+        originalBpm: 120,
+        createdAt: new Date().toISOString()
+      };
+
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 2, 0.5, [], 'verse', mockMotif);
+      expect(notes.length).toBeGreaterThan(0);
+
+      // Since rhythm is scaled and intervals applied, we just check that it loops the notes
+      // and produces a valid output block
+      expect(notes[0]).toBeDefined();
     });
   });
 

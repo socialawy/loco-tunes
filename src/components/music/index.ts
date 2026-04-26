@@ -7,3 +7,4 @@ export * from './EffectsRack';
 export * from './ExportPanel';
 export * from './HardwareSettings';
 export * from './ProjectBrowser';
+export * from './MotifBrowser';

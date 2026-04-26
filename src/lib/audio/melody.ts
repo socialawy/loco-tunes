@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -66,7 +66,8 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -81,14 +82,113 @@ export function generateMelodyNotes(
   // Get mood-based parameters
   const { contour, jumpiness } = getMoodBias(mood);
   
+  let currentTime = 0;
+  let currentScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
+  let noteIndex = 0;
+
+  if (motif && motif.notes.length > 0) {
+    // If a motif is provided, use its rhythm and pitch intervals
+    const ratio = bpm / motif.originalBpm;
+    // We'll loop the motif over the requested numBars
+    const totalDuration = numBars * 4 * beatDuration;
+
+    // Find highest and lowest note to find center
+    const pitches = motif.notes.map(n => n.pitch);
+    const minPitch = Math.min(...pitches);
+    const maxPitch = Math.max(...pitches);
+    const motifCenterPitch = Math.round((minPitch + maxPitch) / 2);
+
+    // We'll find the nearest pitch in the new extended scale to the root
+    let newCenterIndex = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < extendedScale.length; i++) {
+        const diff = Math.abs(extendedScale[i] - rootMidi);
+        if (diff < minDiff) {
+            minDiff = diff;
+            newCenterIndex = i;
+        }
+    }
+
+    // The motif's duration in the new BPM
+    let lastMotifNoteEnd = 0;
+    motif.notes.forEach(n => {
+        const scaledEnd = (n.startTime + n.duration) * ratio;
+        if (scaledEnd > lastMotifNoteEnd) {
+            lastMotifNoteEnd = scaledEnd;
+        }
+    });
+
+    // Round the motif duration up to the nearest bar (4 beats) to account for trailing rests
+    // so it stays synchronized with the 4/4 grid when looped.
+    const newBarDuration = 4 * beatDuration;
+    if (lastMotifNoteEnd === 0) {
+      lastMotifNoteEnd = newBarDuration;
+    } else {
+      lastMotifNoteEnd = Math.ceil(lastMotifNoteEnd / newBarDuration) * newBarDuration;
+    }
+
+    while (currentTime < totalDuration) {
+        // Iterate over motif notes
+        for (const mNote of motif.notes) {
+            // Apply current offset and scaling
+            const startTime = currentTime + (mNote.startTime * ratio);
+            if (startTime >= totalDuration) break;
+
+            const duration = mNote.duration * ratio;
+
+            // Map pitch interval from motif center to the new scale center
+            const interval = mNote.pitch - motifCenterPitch;
+
+            // Map that interval onto the extendedScale index
+            // A semi-tone interval doesn't perfectly match scale steps, so we approximate
+            // On average, a scale step is ~1.7 semitones
+            const scaleStepOffset = Math.round(interval / 1.7);
+
+            // Add a little randomness based on complexity to make it a variation, not an exact copy
+            let variationOffset = 0;
+            if (Math.random() < complexity * 0.5) {
+               variationOffset = (Math.random() > 0.5 ? 1 : -1);
+            }
+
+            const targetScaleIndex = Math.max(0, Math.min(extendedScale.length - 1, newCenterIndex + scaleStepOffset + variationOffset));
+            const pitch = extendedScale[targetScaleIndex];
+
+            const contourProgress = startTime / totalDuration;
+            let baseVelocity = genre === 'ambient' ? 60 : 80;
+
+            if (sectionType === 'verse') {
+                baseVelocity += Math.floor(contourProgress * 20); // Crescendo
+            } else if (sectionType === 'chorus') {
+                baseVelocity += 20; // Consistently loud
+            } else if (sectionType === 'outro') {
+                baseVelocity -= Math.floor(contourProgress * 20); // Decrescendo
+            } else if (sectionType === 'intro') {
+                baseVelocity -= 10; // Softer intro
+            }
+
+            const velocity = Math.max(0, Math.min(127, Math.round(baseVelocity + Math.random() * 20)));
+
+            notes.push({
+                pitch,
+                velocity,
+                startTime,
+                duration
+            });
+        }
+
+        currentTime += lastMotifNoteEnd;
+        // Shift center occasionally for variation
+        if (Math.random() < jumpiness) {
+            newCenterIndex = Math.max(0, Math.min(extendedScale.length - 1, newCenterIndex + (Math.random() > 0.5 ? 1 : -1)));
+        }
+    }
+
+    return notes;
+  }
+
   // Select rhythm pattern based on genre
   const rhythmPatterns = MELODY_RHYTHM_PATTERNS[genre] || MELODY_RHYTHM_PATTERNS.electronic;
   const selectedPattern = rhythmPatterns[Math.floor(Math.random() * rhythmPatterns.length)];
-  
-  let currentTime = 0;
-  let currentScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
-  let barCount = 0;
-  let noteIndex = 0;
   
   while (currentTime < numBars * 4 * beatDuration) {
     const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
