@@ -44,8 +44,17 @@ interface MusicStore {
   generationProgress: number;
   isExporting: boolean;
   
+  // Motif state
+  savedMotifs: import('@/types/music').MelodyMotif[];
+  useSavedMotif: boolean;
+  selectedMotifId: string | null;
+
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
+  saveMotif: (stem: Stem) => void;
+  deleteMotif: (id: string) => void;
+  setUseSavedMotif: (use: boolean) => void;
+  setSelectedMotifId: (id: string | null) => void;
   generateTrack: () => Promise<void>;
   regenerateStem: (stemType: StemType) => Promise<void>;
   generateStemVariation: (stemType: StemType) => Promise<void>;
@@ -89,14 +98,60 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   generationProgress: 0,
   isExporting: false,
   
+  // Motif state
+  savedMotifs: [],
+  useSavedMotif: false,
+  selectedMotifId: null,
+
   // Set generation params
   setParams: (newParams) => set((state) => ({
     params: { ...state.params, ...newParams },
   })),
+
+  saveMotif: (stem) => {
+    const { params, savedMotifs } = get();
+    if (stem.notes.length === 0) return;
+
+    const newMotif = {
+      id: crypto.randomUUID(),
+      name: `Motif ${savedMotifs.length + 1} (${params.genre})`,
+      notes: [...stem.notes],
+      originalBpm: params.bpm,
+      createdAt: new Date().toISOString(),
+    };
+
+    const newMotifs = [...savedMotifs, newMotif];
+    set({ savedMotifs: newMotifs });
+
+    // Auto-save motif to storage
+    import('@/lib/storage').then(({ saveMotifToStorage }) => {
+      saveMotifToStorage(newMotif).catch(console.error);
+    });
+
+    toast.success('Motif saved to library');
+  },
+
+  deleteMotif: (id) => {
+    const { savedMotifs, selectedMotifId } = get();
+    const newMotifs = savedMotifs.filter(m => m.id !== id);
+
+    set({
+      savedMotifs: newMotifs,
+      selectedMotifId: selectedMotifId === id ? null : selectedMotifId,
+      useSavedMotif: selectedMotifId === id ? false : get().useSavedMotif,
+    });
+
+    import('@/lib/storage').then(({ deleteMotifFromStorage }) => {
+      deleteMotifFromStorage(id).catch(console.error);
+    });
+  },
+
+  setUseSavedMotif: (use) => set({ useSavedMotif: use }),
+  setSelectedMotifId: (id) => set({ selectedMotifId: id }),
   
   // Generate a new track
   generateTrack: async () => {
-    const { params, hardwareTier } = get();
+    const { params, hardwareTier, useSavedMotif, selectedMotifId, savedMotifs } = get();
     
     // Limit duration based on hardware tier
     const limitedParams = {
@@ -110,7 +165,11 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       set({ generationProgress: 20 });
       
-      const track = await generateTrack(limitedParams);
+      let motif;
+      if (useSavedMotif && selectedMotifId) {
+        motif = savedMotifs.find(m => m.id === selectedMotifId);
+      }
+      const track = await generateTrack(limitedParams, motif);
       
       set({ 
         currentTrack: track, 
@@ -140,13 +199,17 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Regenerate a single stem
   regenerateStem: async (stemType: StemType) => {
-    const { currentTrack } = get();
+    const { currentTrack, useSavedMotif, selectedMotifId, savedMotifs } = get();
     if (!currentTrack) return;
     
     set({ isGenerating: true });
     
     try {
-      const newStem = await regenerateStem(currentTrack, stemType);
+      let motif;
+      if (stemType === 'melody' && useSavedMotif && selectedMotifId) {
+        motif = savedMotifs.find(m => m.id === selectedMotifId);
+      }
+      const newStem = await regenerateStem(currentTrack, stemType, motif);
       
       set((state) => ({
         currentTrack: state.currentTrack ? {
@@ -424,8 +487,11 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       const projects = await getProjects();
       set({ projects });
+
+      const motifs = await import('@/lib/storage').then(m => m.loadMotifsFromStorage());
+      set({ savedMotifs: motifs });
     } catch (err) {
-      console.error('Failed to fetch projects:', err);
+      console.error('Failed to fetch projects or motifs:', err);
     }
   },
 

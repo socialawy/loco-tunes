@@ -3,10 +3,43 @@ import {
   generateMelodyNotes,
   generateArpeggioNotes,
   generateCounterMelodyNotes,
-  quantizeNotes
+  quantizeNotes,
+  extractMotif
 } from '@/lib/audio/melody';
 
 describe('Audio Melody Generator', () => {
+  describe('extractMotif', () => {
+    it('should extract a motif by normalizing pitch and time', () => {
+      const notes = [
+        { pitch: 60, velocity: 80, startTime: 1, duration: 0.5 },
+        { pitch: 62, velocity: 90, startTime: 1.5, duration: 0.5 },
+        { pitch: 58, velocity: 70, startTime: 2, duration: 1 },
+      ];
+
+      const motifPattern = extractMotif(notes);
+
+      expect(motifPattern.length).toBe(3);
+
+      // First note should be normalized to 0 pitch and 0 time
+      expect(motifPattern[0].pitch).toBe(0);
+      expect(motifPattern[0].startTime).toBe(0);
+      expect(motifPattern[0].velocity).toBe(80);
+      expect(motifPattern[0].duration).toBe(0.5);
+
+      // Second note should be relative to the first
+      expect(motifPattern[1].pitch).toBe(2); // 62 - 60
+      expect(motifPattern[1].startTime).toBe(0.5); // 1.5 - 1
+
+      // Third note
+      expect(motifPattern[2].pitch).toBe(-2); // 58 - 60
+      expect(motifPattern[2].startTime).toBe(1); // 2 - 1
+    });
+
+    it('should return empty array for empty notes', () => {
+      expect(extractMotif([])).toEqual([]);
+    });
+  });
+
   describe('generateMelodyNotes', () => {
     it('should generate notes for electronic genre', () => {
       const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 2, 0.5);
@@ -72,6 +105,40 @@ describe('Audio Melody Generator', () => {
       // We just ensure they both produce valid arrays.
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
+    });
+
+    it('should use a provided motif instead of generating randomly', () => {
+      const motifNotes = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 0.5 },
+        { pitch: 62, velocity: 80, startTime: 0.5, duration: 0.5 },
+      ];
+
+      const motif = {
+        id: '1',
+        name: 'Test Motif',
+        notes: motifNotes,
+        originalBpm: 120,
+        createdAt: new Date().toISOString()
+      };
+
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 1, 0.5, [], 'verse', motif);
+
+      // We know motif generates deterministically based on the input pattern
+      // 1 bar = 4 beats = 2 seconds at 120BPM
+      // Motif is 1 second long (0.5 + 0.5 duration, ends at 1.0)
+      // So it should repeat
+      expect(notes.length).toBeGreaterThan(0);
+
+      // Check that the pattern was applied (first note should be basePitch + motif[0].pitch)
+      // rootMidi = 60, basePitch = 60 + 12 = 72
+      // motifPattern[0].pitch = 0
+      // So first generated note pitch = 72
+      expect(notes[0].pitch).toBe(72);
+
+      // Second note pitch should be basePitch + motifPattern[1].pitch
+      // motifPattern[1].pitch = 2 (62 - 60)
+      // So second note pitch = 74
+      expect(notes[1].pitch).toBe(74);
     });
   });
 

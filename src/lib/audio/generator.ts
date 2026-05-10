@@ -7,6 +7,7 @@ import {
   Chord,
   STEM_COLORS,
   SectionType,
+  MelodyMotif,
 } from '@/types/music';
 import { getAudioEngine } from './engine';
 import {
@@ -33,7 +34,7 @@ interface ExtendedPerformance extends Performance {
   };
 }
 
-export async function generateTrack(params: GenerationParams): Promise<Track> {
+export async function generateTrack(params: GenerationParams, motif?: MelodyMotif): Promise<Track> {
   const { bpm, genre, mood, duration, key, scale, complexity } = params;
   
   // Convert key to MIDI note number
@@ -111,7 +112,7 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     bassNotes.push(...sectionBass);
 
     // Melody
-    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, motif);
     const shiftedMelody = sectionMelody.map(n => ({
       ...n,
       startTime: n.startTime + sectionStartTime
@@ -162,7 +163,8 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
 // Regenerate a single stem
 export async function regenerateStem(
   track: Track,
-  stemType: StemType
+  stemType: StemType,
+  motif?: MelodyMotif
 ): Promise<Stem> {
   const { bpm, genre, mood, key, scale, complexity } = track.params;
   const rootMidi = noteToMidi(key, 4);
@@ -197,7 +199,7 @@ export async function regenerateStem(
         sectionNotes = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
         break;
       case 'melody':
-        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type)
+        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, motif)
           .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
         break;
       case 'harmony':

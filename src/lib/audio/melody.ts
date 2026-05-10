@@ -1,8 +1,25 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, MelodyMotif } from '@/types/music';
 import { getScale } from './chords';
+
+// Motif extraction: Normalizes notes so that the first note is at pitch offset 0 and start time 0.
+// Also calculates relative durations and timing.
+export function extractMotif(notes: Note[]): Note[] {
+  if (!notes || notes.length === 0) return [];
+
+  const firstNote = notes[0];
+  const basePitch = firstNote.pitch;
+  const baseTime = firstNote.startTime;
+
+  return notes.map(note => ({
+    pitch: note.pitch - basePitch,
+    velocity: note.velocity,
+    startTime: note.startTime - baseTime,
+    duration: note.duration,
+  }));
+}
 
 // Melody rhythm patterns by genre
 const MELODY_RHYTHM_PATTERNS: Record<Genre, number[][]> = {
@@ -66,16 +83,85 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: MelodyMotif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
-  
+
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
   for (let octave = -1; octave <= 2; octave++) {
     scale.forEach(note => extendedScale.push(note + octave * 12));
+  }
+
+  // Helper to snap a pitch to the closest note in the extended scale
+  const snapToScale = (targetPitch: number) => {
+    return extendedScale.reduce((prev, curr) =>
+      Math.abs(curr - targetPitch) < Math.abs(prev - targetPitch) ? curr : prev
+    );
+  };
+
+  // Use saved motif if provided
+  if (motif && motif.notes.length > 0) {
+    const motifPattern = extractMotif(motif.notes);
+    const timeScale = (60 / bpm) / (60 / motif.originalBpm); // adjust timing based on BPM diff
+
+    // Find closest note in the current scale to the rootMidi to act as the base pitch
+    // Usually rootMidi is already in the scale, but we ensure it matches the range.
+    // For simplicity, we just use the rootMidi + 12 (an octave up for melody).
+    const basePitch = rootMidi + 12;
+
+    let currentTime = 0;
+    const totalDuration = numBars * 4 * beatDuration;
+
+    // Repeat motif to fill the section
+    while (currentTime < totalDuration) {
+      for (const mNote of motifPattern) {
+        const scaledStartTime = mNote.startTime * timeScale;
+        const scaledDuration = mNote.duration * timeScale;
+
+        if (currentTime + scaledStartTime >= totalDuration) {
+          break; // Stop if we exceed the section duration
+        }
+
+        // Find closest pitch in scale
+        const targetPitch = snapToScale(basePitch + mNote.pitch);
+
+        // Dynamic velocity changes based on section type
+        let baseVelocity = mNote.velocity;
+        const contourProgress = (currentTime + scaledStartTime) / totalDuration;
+
+        if (sectionType === 'verse') {
+          baseVelocity += Math.floor(contourProgress * 20);
+        } else if (sectionType === 'chorus') {
+          baseVelocity += 20;
+        } else if (sectionType === 'outro') {
+          baseVelocity -= Math.floor(contourProgress * 20);
+        } else if (sectionType === 'intro') {
+          baseVelocity -= 10;
+        }
+
+        notes.push({
+          pitch: targetPitch,
+          velocity: Math.max(0, Math.min(127, Math.round(baseVelocity))),
+          startTime: currentTime + scaledStartTime,
+          duration: scaledDuration,
+        });
+      }
+
+      // Move currentTime forward by the duration of one motif repetition
+      // Calculate length of the motif pattern in time
+      const motifLength = motifPattern[motifPattern.length - 1].startTime * timeScale + motifPattern[motifPattern.length - 1].duration * timeScale;
+      // Snap to nearest beat or half beat to avoid drifting too much
+      const snapTo = beatDuration * 2;
+      currentTime += Math.ceil(motifLength / snapTo) * snapTo;
+
+      if (motifLength === 0) break; // Infinite loop protection
+    }
+
+    return notes;
   }
   
   // Get mood-based parameters
