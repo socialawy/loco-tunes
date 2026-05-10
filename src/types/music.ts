@@ -37,6 +37,14 @@ export interface Stem {
   synthParams?: SynthParams;
 }
 
+export interface MelodyMotif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  createdAt: string;
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -107,8 +115,17 @@ export interface MusicState {
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
   
+  // Motif state
+  savedMotifs: MelodyMotif[];
+  useSavedMotif: boolean;
+  selectedMotifId: string | null;
+
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
+  saveMotif: (stem: Stem) => void;
+  deleteMotif: (id: string) => void;
+  setUseSavedMotif: (use: boolean) => void;
+  setSelectedMotifId: (id: string | null) => void;
   generateTrack: () => Promise<void>;
   playTrack: () => void;
   pauseTrack: () => void;

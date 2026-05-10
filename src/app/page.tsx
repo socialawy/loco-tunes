@@ -15,6 +15,7 @@ import {
   ExportPanel,
   HardwareSettings,
   ProjectBrowser,
+  MotifLibrary,
 } from '@/components/music';
 import { Music, Settings2, Layers, Sparkles, FolderOpen } from 'lucide-react';
 
@@ -150,6 +151,13 @@ export default function LocoTunesPage() {
                     <FolderOpen className="h-4 w-4 mr-2" />
                     Projects
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="motifs"
+                    className="data-[state=active]:bg-violet-500 data-[state=active]:text-white"
+                  >
+                    <Music className="h-4 w-4 mr-2" />
+                    Motifs
+                  </TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="timeline" className="mt-4">
@@ -170,6 +178,10 @@ export default function LocoTunesPage() {
 
                 <TabsContent value="projects" className="mt-4">
                   <ProjectBrowser />
+                </TabsContent>
+
+                <TabsContent value="motifs" className="mt-4">
+                  <MotifLibrary />
                 </TabsContent>
               </Tabs>
             ) : (
