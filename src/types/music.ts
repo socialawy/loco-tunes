@@ -47,6 +47,17 @@ export interface Track {
   createdAt: Date;
 }
 
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  originalKey: string;
+  originalScale: string;
+  createdAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -107,6 +118,10 @@ export interface MusicState {
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
   
+  // Motifs
+  motifs: Motif[];
+  useMotifId: string | null;
+
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
   generateTrack: () => Promise<void>;
@@ -120,6 +135,10 @@ export interface MusicState {
   exportWav: () => void;
   exportMidi: () => void;
   setMode: (mode: 'simple' | 'advanced') => void;
+  saveMotif: (stemType: StemType, name: string) => Promise<void>;
+  setUseMotifId: (id: string | null) => void;
+  deleteMotif: (id: string) => Promise<void>;
+  fetchMotifs: () => Promise<void>;
 }
 
 // Scale definitions (semitone intervals from root)

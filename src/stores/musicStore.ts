@@ -14,8 +14,8 @@ import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
-import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
-import type { Project } from '@/types/music';
+import { saveProject, loadProject, deleteProject, getProjects, saveMotif as saveMotifToStorage, getMotifs, deleteMotif as deleteMotifFromStorage } from '@/lib/storage';
+import type { Project, Motif } from '@/types/music';
 
 interface MusicStore {
   // Generation params
@@ -37,6 +37,11 @@ interface MusicStore {
   // Projects
   projects: Project[];
   currentProjectId: string | null;
+
+  // Motifs
+  motifs: Motif[];
+  useMotifId: string | null;
+
 
   // UI state
   mode: 'simple' | 'advanced';
@@ -68,6 +73,12 @@ interface MusicStore {
   loadProjectData: (id: string) => Promise<void>;
   deleteProjectData: (id: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
+
+  fetchMotifs: () => Promise<void>;
+  setUseMotifId: (id: string | null) => void;
+  saveMotif: (stemType: StemType, name: string) => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
+
 }
 
 // Variables for auto-save debounce
@@ -88,6 +99,8 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   isGenerating: false,
   generationProgress: 0,
   isExporting: false,
+  motifs: [],
+  useMotifId: null,
   
   // Set generation params
   setParams: (newParams) => set((state) => ({
@@ -110,7 +123,9 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       set({ generationProgress: 20 });
       
-      const track = await generateTrack(limitedParams);
+
+      const activeMotif = get().useMotifId ? get().motifs.find(m => m.id === get().useMotifId) : null;
+      const track = await generateTrack(limitedParams, activeMotif);
       
       set({ 
         currentTrack: track, 
@@ -417,6 +432,90 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
+
+
+  // --- Motif Actions ---
+  fetchMotifs: async () => {
+    try {
+      const motifs = await getMotifs();
+      set({ motifs });
+    } catch (err) {
+      console.error('Failed to fetch motifs:', err);
+    }
+  },
+
+  setUseMotifId: (id: string | null) => {
+    set({ useMotifId: id });
+  },
+
+  saveMotif: async (stemType: StemType, name: string) => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+
+    const stem = currentTrack.stems.find(s => s.type === stemType);
+    if (!stem || !stem.notes || stem.notes.length === 0) {
+      toast.error(`No notes found in ${stemType} stem`);
+      return;
+    }
+
+    // Extract first 4 bars (or all if shorter) to keep motif concise
+    // Assuming 4/4 time and finding max duration to capture a reasonable chunk
+    // We just take notes up to 16 beats (4 bars * 4 beats/bar)
+    const beatDuration = 60 / currentTrack.params.bpm;
+    const motifDuration = 4 * 4 * beatDuration;
+
+    // Sort notes by start time
+    const sortedNotes = [...stem.notes].sort((a, b) => a.startTime - b.startTime);
+    const firstNoteTime = sortedNotes[0].startTime;
+
+    const extractedNotes = sortedNotes
+      .filter(n => n.startTime < firstNoteTime + motifDuration)
+      .map(n => ({
+        ...n,
+        startTime: n.startTime - firstNoteTime // Normalize to 0
+      }));
+
+    if (extractedNotes.length === 0) {
+      toast.error('Could not extract notes for motif');
+      return;
+    }
+
+    const motif: Motif = {
+      id: crypto.randomUUID(),
+      name: name || `Motif ${new Date().toLocaleTimeString()}`,
+      notes: extractedNotes,
+      originalBpm: currentTrack.params.bpm,
+      originalKey: currentTrack.params.key,
+      originalScale: currentTrack.params.scale,
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await saveMotifToStorage(motif);
+      await get().fetchMotifs();
+      toast.success('Motif saved!');
+    } catch (err) {
+      console.error('Failed to save motif:', err);
+      toast.error('Failed to save motif');
+    }
+  },
+
+  deleteMotif: async (id: string) => {
+    try {
+      await deleteMotifFromStorage(id);
+
+      const { useMotifId } = get();
+      if (useMotifId === id) {
+        set({ useMotifId: null });
+      }
+
+      await get().fetchMotifs();
+      toast.success('Motif deleted');
+    } catch (err) {
+      console.error('Failed to delete motif:', err);
+      toast.error('Failed to delete motif');
+    }
+  },
 
   // --- Project Actions ---
 

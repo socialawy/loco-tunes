@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -66,18 +66,75 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif | null
 ): Note[] {
   const notes: Note[] = [];
+
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
-  
+
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
   for (let octave = -1; octave <= 2; octave++) {
     scale.forEach(note => extendedScale.push(note + octave * 12));
   }
   
+  if (motif && motif.notes.length > 0) {
+    // Inject motif logic
+    // Adapt to new BPM and key
+    const timeScale = motif.originalBpm / bpm;
+    // Basic root difference for transposition
+    // Find closest note in current scale for each motif note
+    const adaptedMotifNotes = motif.notes.map(n => {
+      // Find closest pitch in extendedScale
+      let closestPitch = extendedScale[0];
+      let minDiff = Infinity;
+      for (const p of extendedScale) {
+        const diff = Math.abs(p - n.pitch);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestPitch = p;
+        }
+      }
+      return {
+        ...n,
+        pitch: closestPitch,
+        startTime: n.startTime * timeScale,
+        duration: n.duration * timeScale
+      };
+    });
+
+    const motifDuration = 4 * 4 * beatDuration; // Assume motif is 4 bars long
+    const loopDuration = numBars * 4 * beatDuration;
+
+    let currentTimeLoop = 0;
+    while (currentTimeLoop < loopDuration) {
+      for (const note of adaptedMotifNotes) {
+        const absoluteTime = currentTimeLoop + note.startTime;
+        if (absoluteTime < loopDuration) {
+          notes.push({
+            ...note,
+            startTime: absoluteTime
+          });
+        }
+      }
+      currentTimeLoop += motifDuration;
+    }
+
+    // Introduce slight variations based on complexity or section if needed,
+    // but for continuity we keep it recognizable.
+    // If it's a verse, maybe we play it softer.
+    if (sectionType === 'verse') {
+       notes.forEach(n => n.velocity = Math.max(20, n.velocity - 20));
+    } else if (sectionType === 'chorus') {
+       notes.forEach(n => n.velocity = Math.min(127, n.velocity + 10));
+    }
+
+    return notes;
+  }
+
+
   // Get mood-based parameters
   const { contour, jumpiness } = getMoodBias(mood);
   

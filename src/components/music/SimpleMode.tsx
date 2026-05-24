@@ -63,8 +63,16 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    motifs,
+    useMotifId,
+    setUseMotifId,
+    fetchMotifs,
   } = useMusicStore();
   
+  React.useEffect(() => {
+    fetchMotifs();
+  }, [fetchMotifs]);
+
   const handleGenerate = () => {
     generateTrack();
   };
@@ -239,6 +247,48 @@ export function SimpleMode() {
         )}
       </div>
       
+
+      {/* Motif Selector */}
+      {motifs.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-gray-300">Use Saved Motif</Label>
+            {useMotifId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-gray-400 hover:text-white"
+                onClick={() => setUseMotifId(null)}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          <Select
+            value={useMotifId || "none"}
+            onValueChange={(value) => setUseMotifId(value === "none" ? null : value)}
+          >
+            <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+              <SelectValue placeholder="Select a melody to reuse" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+              <SelectItem value="none" className="text-gray-400 hover:bg-[#2a2a4e]">
+                None (Generate new melody)
+              </SelectItem>
+              {motifs.map((motif) => (
+                <SelectItem
+                  key={motif.id}
+                  value={motif.id}
+                  className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+                >
+                  {motif.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Complexity Slider */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">

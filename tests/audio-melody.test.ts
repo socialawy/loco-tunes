@@ -46,6 +46,34 @@ describe('Audio Melody Generator', () => {
       }
     });
 
+
+    it('should utilize a provided motif and adapt it', () => {
+      const mockMotif = {
+        id: 'motif-1',
+        name: 'Test Motif',
+        notes: [
+          { pitch: 60, velocity: 80, startTime: 0, duration: 1 },
+          { pitch: 62, velocity: 80, startTime: 1, duration: 1 }
+        ],
+        originalBpm: 120,
+        originalKey: 'C',
+        originalScale: 'major',
+        createdAt: '2023-01-01'
+      };
+
+      // Generate melody with motif, changing BPM to 60 (half speed)
+      // and note we are targeting rootMidi 60 (C) but providing the motif
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 60, 1, 0.5, [], 'verse', mockMotif as any);
+
+      // Should contain notes
+      expect(notes.length).toBeGreaterThan(0);
+
+      // Since BPM is halved (120 -> 60), the first duration should be scaled by 120/60 = 2
+      // Check the first note
+      expect(notes[0].duration).toBeCloseTo(2);
+      expect(notes[0].startTime).toBeCloseTo(0);
+    });
+
     it('should generate crescendo for verse', () => {
       const verseNotes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 4, 1, [], 'verse');
       // Just assert it generates without crashing, specific values are heavily randomized
