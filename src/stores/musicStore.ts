@@ -41,6 +41,8 @@ interface MusicStore {
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
+  isInfinite: boolean;
+  isExtending: boolean;
   generationProgress: number;
   isExporting: boolean;
   
@@ -59,6 +61,8 @@ interface MusicStore {
   exportWav: () => Promise<void>;
   exportMidi: () => void;
   setMode: (mode: 'simple' | 'advanced') => void;
+  toggleInfinite: () => void;
+  extendTrack: () => Promise<void>;
   updateCurrentTime: (time: number) => void;
   restartPlayback: () => void;
 
@@ -86,6 +90,8 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   hardwareTier: detectHardwareCapabilities(),
   mode: 'simple',
   isGenerating: false,
+  isInfinite: false,
+  isExtending: false,
   generationProgress: 0,
   isExporting: false,
   
@@ -231,14 +237,18 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       
       // Update time loop
       const updateTime = () => {
-        const { isPlaying, currentTrack } = get();
-        if (!isPlaying || !currentTrack) return;
+        const state = get();
+        if (!state.isPlaying || !state.currentTrack) return;
 
         const currentTime = engine.getCurrentTime();
 
-        if (currentTime >= currentTrack.duration) {
+        if (currentTime >= state.currentTrack.duration && !state.isInfinite) {
           get().stopTrack();
           return;
+        }
+
+        if (state.isInfinite && !state.isExtending && state.currentTrack.duration - currentTime < 10) {
+          get().extendTrack();
         }
 
         set({ currentTime });
@@ -415,6 +425,89 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   // Set UI mode
   setMode: (mode: 'simple' | 'advanced') => set({ mode }),
   
+  toggleInfinite: () => set(state => ({ isInfinite: !state.isInfinite })),
+
+  extendTrack: async () => {
+    const { currentTrack: initialTrack, params, hardwareTier } = get();
+    if (!initialTrack) return;
+
+    set({ isExtending: true });
+
+    try {
+      // Create a segment to append (e.g. 15 seconds)
+      const extensionDuration = Math.min(15, hardwareTier.maxDuration);
+
+      const newSegment = await generateTrack({
+        ...params,
+        duration: extensionDuration,
+      });
+
+      const { currentTrack: currentFreshTrack, isPlaying } = get();
+
+      // Stop and avoid corrupting state if track changed or stopped
+      if (!isPlaying || !currentFreshTrack || currentFreshTrack.id !== initialTrack.id) {
+        set({ isExtending: false });
+        return;
+      }
+
+      const engine = getAudioEngine();
+
+      // Fix audio sync if the generation took too long
+      const currentEngineTime = engine.getCurrentTime();
+      let playOffset = 0;
+      let scheduledStart = initialTrack.duration;
+
+      if (currentEngineTime >= initialTrack.duration) {
+         // It took too long, the track finished and now we're behind.
+         // In WebAudio we need to start "now" (which is essentially engine.getCurrentTime() effectively handled by calculating difference)
+         // Actually, if currentEngineTime > duration, we missed the scheduled time.
+         // We should just schedule it exactly at currentEngineTime, but offset the buffer slightly
+         const timeMissed = currentEngineTime - initialTrack.duration;
+         scheduledStart = currentEngineTime;
+         playOffset = timeMissed;
+      }
+
+      engine.scheduleTrackSegment(newSegment, scheduledStart, playOffset);
+
+      const oldDuration = initialTrack.duration;
+      const combinedDuration = oldDuration + newSegment.duration;
+
+      // Update currentTrack state to include new notes and extended duration
+      const mergedStems = currentFreshTrack.stems.map(oldStem => {
+        const newStem = newSegment.stems.find(s => s.type === oldStem.type);
+        if (!newStem) return oldStem;
+
+        // Shift new notes to start at oldDuration
+        const shiftedNotes = newStem.notes.map(n => ({
+          ...n,
+          startTime: n.startTime + oldDuration
+        }));
+
+        return {
+          ...oldStem,
+          notes: [...oldStem.notes, ...shiftedNotes],
+          // Keep old audioBuffer but it doesn't represent the full track now.
+          // AudioEngine manages multiple buffers per stem anyway.
+        };
+      });
+
+      set({
+        currentTrack: {
+          ...currentFreshTrack,
+          duration: combinedDuration,
+          stems: mergedStems
+        },
+        isExtending: false
+      });
+
+    } catch (error) {
+      console.error('Failed to extend track:', error);
+      toast.error('Failed to generate continuous track segment');
+      set({ isExtending: false });
+    }
+  },
+
+
   // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
 

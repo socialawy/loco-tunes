@@ -106,6 +106,8 @@ export interface MusicState {
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
+  isInfinite: boolean;
+  isExtending: boolean;
   
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
@@ -120,6 +122,8 @@ export interface MusicState {
   exportWav: () => void;
   exportMidi: () => void;
   setMode: (mode: 'simple' | 'advanced') => void;
+  toggleInfinite: () => void;
+  extendTrack: () => Promise<void>;
 }
 
 // Scale definitions (semitone intervals from root)

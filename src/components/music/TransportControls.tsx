@@ -3,7 +3,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useMusicStore } from '@/stores/musicStore';
-import { Play, Pause, Square, SkipBack, SkipForward } from 'lucide-react';
+import { Play, Pause, Square, SkipBack, SkipForward, Repeat } from 'lucide-react';
 
 export function TransportControls() {
   const { 
@@ -14,6 +14,8 @@ export function TransportControls() {
     stopTrack,
     currentTime,
     updateCurrentTime,
+    isInfinite,
+    toggleInfinite,
   } = useMusicStore();
   
   const handlePlayPause = () => {
@@ -38,6 +40,19 @@ export function TransportControls() {
   
   return (
     <div className="flex items-center gap-4 p-4 bg-[#1a1a2e] rounded-lg border border-[#2a2a4e]">
+
+      {/* Infinite Button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={toggleInfinite}
+        disabled={!currentTrack}
+        className={`h-10 w-10 ml-2 rounded-full ${isInfinite ? 'text-violet-400 bg-[#2a2a4e]' : 'text-gray-400 hover:text-white hover:bg-[#2a2a4e]'}`}
+        title="Toggle Infinite Generation"
+      >
+        <Repeat className="h-5 w-5" />
+      </Button>
+
       {/* Stop Button */}
       <Button
         variant="outline"

@@ -1,3 +1,4 @@
+import { useMusicStore } from '../src/stores/musicStore';
 import { describe, it, expect, vi } from 'vitest';
 import { generateTrack, regenerateStem, generateStemVariation, validateParams } from '@/lib/audio/generator';
 import type { GenerationParams, Track } from '@/types/music';
@@ -150,3 +151,17 @@ describe('Audio Integration: Full Generation Pipeline', () => {
     });
   });
 });
+
+  describe('Infinite Generation State', () => {
+    it('should expose infinite generation properties and toggle', () => {
+      const state = useMusicStore.getState();
+      expect(state.isInfinite).toBe(false);
+      expect(state.isExtending).toBe(false);
+
+      state.toggleInfinite();
+      expect(useMusicStore.getState().isInfinite).toBe(true);
+
+      state.toggleInfinite();
+      expect(useMusicStore.getState().isInfinite).toBe(false);
+    });
+  });

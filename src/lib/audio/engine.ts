@@ -26,7 +26,7 @@ export class AudioEngine {
   private eqMid: BiquadFilterNode;
   private eqHigh: BiquadFilterNode;
   
-  private stemPlayers: Map<StemType, { source: AudioBufferSourceNode | null; gain: GainNode }> = new Map();
+  private stemPlayers: Map<StemType, { source: AudioBufferSourceNode; gain: GainNode; startTime: number }[]> = new Map();
   public isPlaying: boolean = false;
   private startTime: number = 0;
   private pausedAt: number = 0;
@@ -122,6 +122,10 @@ export class AudioEngine {
     this.startTime = this._context.currentTime - offset;
     this.isPlaying = true;
 
+    this.scheduleTrackSegment(track, 0, offset);
+  }
+
+  scheduleTrackSegment(track: Track, segmentStartTime: number, playOffset: number = 0): void {
     const hasSolo = track.stems.some(s => s.solo);
 
     for (const stem of track.stems) {
@@ -140,12 +144,30 @@ export class AudioEngine {
       source.connect(gainNode);
       gainNode.connect(this.getMasterInput());
 
-      source.start(0, offset);
+      // If segmentStartTime is 0, playOffset matters. Otherwise, it starts exactly at segmentStartTime.
+      let startWhen = this.startTime + segmentStartTime;
+      let bufferOffset = 0;
+
+      if (segmentStartTime === 0) {
+        startWhen = 0; // Immediate start handled by offset
+        bufferOffset = playOffset;
+      }
+
+      source.start(startWhen, bufferOffset);
       
-      this.stemPlayers.set(stem.type, { source, gain: gainNode });
+      const players = this.stemPlayers.get(stem.type) || [];
+      players.push({ source, gain: gainNode, startTime: segmentStartTime });
+      this.stemPlayers.set(stem.type, players);
       
       source.onended = () => {
-        // Handle end if needed
+        // Remove from array when done to prevent memory leak
+        const stemList = this.stemPlayers.get(stem.type);
+        if (stemList) {
+          const idx = stemList.findIndex(p => p.source === source);
+          if (idx !== -1) {
+            stemList.splice(idx, 1);
+          }
+        }
       };
     }
   }
@@ -161,17 +183,21 @@ export class AudioEngine {
   }
 
   setStemVolume(stemType: StemType, volume: number): void {
-    const player = this.stemPlayers.get(stemType);
-    if (player) {
-      player.gain.gain.setTargetAtTime(volume, this._context.currentTime, 0.015);
+    const players = this.stemPlayers.get(stemType);
+    if (players) {
+      players.forEach(player => {
+        player.gain.gain.setTargetAtTime(volume, this._context.currentTime, 0.015);
+      });
     }
   }
 
   setStemMute(stemType: StemType, isMuted: boolean, originalVolume: number): void {
-    const player = this.stemPlayers.get(stemType);
-    if (player) {
+    const players = this.stemPlayers.get(stemType);
+    if (players) {
       const targetVolume = isMuted ? 0 : originalVolume;
-      player.gain.gain.setTargetAtTime(targetVolume, this._context.currentTime, 0.015);
+      players.forEach(player => {
+        player.gain.gain.setTargetAtTime(targetVolume, this._context.currentTime, 0.015);
+      });
     }
   }
 
@@ -179,13 +205,15 @@ export class AudioEngine {
     const hasSolo = allStems.some(s => s.solo);
     
     allStems.forEach(stem => {
-       const player = this.stemPlayers.get(stem.type);
-       if (player) {
+       const players = this.stemPlayers.get(stem.type);
+       if (players) {
          let targetVolume = stem.volume;
          if (stem.muted) targetVolume = 0;
          if (hasSolo && !stem.solo) targetVolume = 0;
 
-         player.gain.gain.setTargetAtTime(targetVolume, this._context.currentTime, 0.015);
+         players.forEach(player => {
+           player.gain.gain.setTargetAtTime(targetVolume, this._context.currentTime, 0.015);
+         });
        }
     });
   }
@@ -467,15 +495,17 @@ export class AudioEngine {
   }
   
   stopAll(resetTime: boolean = true): void {
-    this.stemPlayers.forEach(({ source }) => {
-      if (source) {
-        try {
-          source.stop();
-          source.disconnect();
-        } catch (e) {
-          // Ignore
+    this.stemPlayers.forEach(players => {
+      players.forEach(({ source }) => {
+        if (source) {
+          try {
+            source.stop();
+            source.disconnect();
+          } catch (e) {
+            // Ignore
+          }
         }
-      }
+      });
     });
     this.stemPlayers.clear();
     this.isPlaying = false;
