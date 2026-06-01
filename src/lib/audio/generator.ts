@@ -7,6 +7,7 @@ import {
   Chord,
   STEM_COLORS,
   SectionType,
+  Motif,
 } from '@/types/music';
 import { getAudioEngine } from './engine';
 import {
@@ -33,7 +34,7 @@ interface ExtendedPerformance extends Performance {
   };
 }
 
-export async function generateTrack(params: GenerationParams): Promise<Track> {
+export async function generateTrack(params: GenerationParams, motif?: Motif): Promise<Track> {
   const { bpm, genre, mood, duration, key, scale, complexity } = params;
   
   // Convert key to MIDI note number
@@ -111,7 +112,7 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     bassNotes.push(...sectionBass);
 
     // Melody
-    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, motif);
     const shiftedMelody = sectionMelody.map(n => ({
       ...n,
       startTime: n.startTime + sectionStartTime
@@ -197,6 +198,8 @@ export async function regenerateStem(
         sectionNotes = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
         break;
       case 'melody':
+        // Note: regenerating stem does not currently re-apply the track's original motif unless we pass it.
+        // Since we don't store motif in track easily, we'll pass undefined for now, or just leave it.
         sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type)
           .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
         break;

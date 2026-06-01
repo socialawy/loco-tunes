@@ -14,8 +14,8 @@ import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
-import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
-import type { Project } from '@/types/music';
+import { saveProject, loadProject, deleteProject, getProjects, saveMotifToStorage, getMotifsFromStorage, deleteMotifFromStorage } from '@/lib/storage';
+import type { Project, Motif } from '@/types/music';
 
 interface MusicStore {
   // Generation params
@@ -37,6 +37,9 @@ interface MusicStore {
   // Projects
   projects: Project[];
   currentProjectId: string | null;
+
+  // Motifs
+  savedMotifs: Motif[];
 
   // UI state
   mode: 'simple' | 'advanced';
@@ -68,6 +71,11 @@ interface MusicStore {
   loadProjectData: (id: string) => Promise<void>;
   deleteProjectData: (id: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
+
+  // Motif Actions
+  loadMotifs: () => Promise<void>;
+  saveMotif: (motif: Motif) => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
 }
 
 // Variables for auto-save debounce
@@ -80,6 +88,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   currentTrack: null,
   projects: [],
   currentProjectId: null,
+  savedMotifs: [],
   isPlaying: false,
   currentTime: 0,
   effects: DEFAULT_EFFECTS,
@@ -110,7 +119,13 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       set({ generationProgress: 20 });
       
-      const track = await generateTrack(limitedParams);
+      // Fetch motif if selected
+      let selectedMotif: Motif | undefined = undefined;
+      if (limitedParams.useMotifId) {
+        selectedMotif = get().savedMotifs.find(m => m.id === limitedParams.useMotifId);
+      }
+
+      const track = await generateTrack(limitedParams, selectedMotif);
       
       set({ 
         currentTrack: track, 
@@ -535,6 +550,38 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       console.error('Failed to load project:', err);
       toast.error('Failed to load project');
       set({ isGenerating: false });
+    }
+  },
+
+  // --- Motif Actions ---
+  loadMotifs: async () => {
+    try {
+      const motifs = await getMotifsFromStorage();
+      set({ savedMotifs: motifs });
+    } catch (err) {
+      console.error('Failed to load motifs:', err);
+    }
+  },
+
+  saveMotif: async (motif: Motif) => {
+    try {
+      await saveMotifToStorage(motif);
+      await get().loadMotifs();
+      toast.success('Motif saved successfully');
+    } catch (err) {
+      console.error('Failed to save motif:', err);
+      toast.error('Failed to save motif');
+    }
+  },
+
+  deleteMotif: async (id: string) => {
+    try {
+      await deleteMotifFromStorage(id);
+      await get().loadMotifs();
+      toast.success('Motif deleted');
+    } catch (err) {
+      console.error('Failed to delete motif:', err);
+      toast.error('Failed to delete motif');
     }
   },
 

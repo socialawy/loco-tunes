@@ -1,8 +1,9 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
-import { getScale } from './chords';
+import type { Genre, Note, Mood, SectionType, Motif, GenerationParams } from '@/types/music';
+import { v4 as generateId } from 'uuid';
+import { getScale, noteToMidi } from './chords';
 
 // Melody rhythm patterns by genre
 const MELODY_RHYTHM_PATTERNS: Record<Genre, number[][]> = {
@@ -66,11 +67,63 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
+
+  if (motif) {
+    // Inject motif logic
+    // We scale times to current BPM, and transpose to current rootMidi.
+    const timeScale = motif.originalBpm / bpm;
+
+    // We can inject the motif at the beginning of the section
+    const motifDuration = 8 * (60 / motif.originalBpm); // Assume 2 bars
+    let currentTime = 0;
+
+    // Loop motif over the bars
+    while (currentTime < numBars * 4 * beatDuration) {
+      for (const motifNote of motif.notes) {
+        if (currentTime + (motifNote.startTime * timeScale) >= numBars * 4 * beatDuration) continue;
+
+        // Transpose motif pitch to current scale/root
+        // Simplest approach: just add current rootMidi to the relative pitch
+        // Note: For better musicality, we'd snap it to current scale, but adding root is a start.
+        let targetPitch = rootMidi + motifNote.pitch;
+
+        // Optional: snap to scale
+        let closestScaleNote = scale[0];
+        let minDiff = 100;
+
+        // Find closest note in extended scale to snap
+        const extendedScale: number[] = [];
+        for (let octave = -1; octave <= 2; octave++) {
+          scale.forEach(note => extendedScale.push(note + octave * 12));
+        }
+
+        for (const sn of extendedScale) {
+          const diff = Math.abs(sn - targetPitch);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestScaleNote = sn;
+          }
+        }
+
+        notes.push({
+          pitch: closestScaleNote,
+          velocity: motifNote.velocity,
+          startTime: currentTime + (motifNote.startTime * timeScale),
+          duration: motifNote.duration * timeScale
+        });
+      }
+      currentTime += motifDuration * timeScale;
+    }
+
+    return notes;
+  }
+
   
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
@@ -256,4 +309,37 @@ export function quantizeNotes(notes: Note[], gridValue: number = 0.25): Note[] {
     startTime: Math.round(note.startTime / gridValue) * gridValue,
     duration: Math.round(note.duration / gridValue) * gridValue || gridValue,
   }));
+}
+
+
+// Extract a distinctive motif from a set of notes (e.g. first 2 bars)
+export function extractMotifFromNotes(notes: Note[], params: GenerationParams, name: string): Motif {
+  const bpm = params.bpm;
+  const beatDuration = 60 / bpm;
+  const twoBarsDuration = 8 * beatDuration;
+
+  // Filter notes in the first 2 bars
+  const motifNotes = notes.filter(n => n.startTime < twoBarsDuration);
+
+  // Create relative pitches based on the root pitch (params.key)
+  // Or rather, we can just store the relative offsets
+  // Use noteToMidi directly if it's imported at top, else import it
+
+  const rootMidi = noteToMidi(params.key, 4);
+
+  const normalizedNotes = motifNotes.map(n => ({
+    pitch: n.pitch - rootMidi,
+    velocity: n.velocity,
+    startTime: n.startTime,
+    duration: n.duration
+  }));
+
+  return {
+    id: generateId(),
+    name,
+    notes: normalizedNotes,
+    originalKey: params.key,
+    originalScale: params.scale,
+    originalBpm: bpm
+  };
 }

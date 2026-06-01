@@ -17,6 +17,7 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  useMotifId?: string;
 }
 
 export interface Note {
@@ -35,6 +36,16 @@ export interface Stem {
   solo: boolean;
   color: string;
   synthParams?: SynthParams;
+}
+
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalKey: string;
+  originalScale: string;
+  originalBpm: number;
 }
 
 export interface Track {

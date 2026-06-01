@@ -3,7 +3,8 @@ import {
   generateMelodyNotes,
   generateArpeggioNotes,
   generateCounterMelodyNotes,
-  quantizeNotes
+  quantizeNotes,
+  extractMotifFromNotes
 } from '@/lib/audio/melody';
 
 describe('Audio Melody Generator', () => {
@@ -127,6 +128,65 @@ describe('Audio Melody Generator', () => {
       const counterNotes = generateCounterMelodyNotes(mainMelody, 60, 'major', 120);
 
       expect(counterNotes.length).toBe(0);
+    });
+  });
+
+
+  describe('Motif Handling', () => {
+    it('should extract a motif from notes successfully', () => {
+      const notes = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 0.5 },
+        { pitch: 62, velocity: 80, startTime: 0.5, duration: 0.5 },
+        { pitch: 64, velocity: 80, startTime: 1.0, duration: 1.0 },
+      ];
+
+      const params = {
+        prompt: '',
+        bpm: 120,
+        genre: 'electronic' as const,
+        mood: 'happy' as const,
+        duration: 30,
+        key: 'C',
+        scale: 'major' as const,
+        complexity: 0.5,
+      };
+
+      const motif = extractMotifFromNotes(notes, params, 'Test Motif');
+
+      expect(motif).toBeDefined();
+      expect(motif.name).toBe('Test Motif');
+      expect(motif.originalKey).toBe('C');
+      expect(motif.notes.length).toBe(3);
+      // Pitch should be relative to C (60)
+      expect(motif.notes[0].pitch).toBe(0);
+      expect(motif.notes[1].pitch).toBe(2);
+      expect(motif.notes[2].pitch).toBe(4);
+    });
+
+    it('should generate melody notes using an existing motif', () => {
+      const motif = {
+        id: '123',
+        name: 'Test Motif',
+        notes: [
+          { pitch: 0, velocity: 80, startTime: 0, duration: 0.5 },
+          { pitch: 2, velocity: 80, startTime: 0.5, duration: 0.5 },
+          { pitch: 4, velocity: 80, startTime: 1.0, duration: 1.0 },
+        ],
+        originalKey: 'C',
+        originalScale: 'major',
+        originalBpm: 120,
+      };
+
+      // Generate in D major (rootMidi = 62)
+      const rootMidi = 62;
+      const scaleName = 'major';
+      const notes = generateMelodyNotes(rootMidi, scaleName, 'electronic', 'happy', 120, 2, 0.5, [], 'verse', motif);
+
+      expect(notes.length).toBeGreaterThan(0);
+      // First note should be D (62 + 0 = 62)
+      expect(notes[0].pitch).toBe(62);
+      // Second note should be E (62 + 2 = 64)
+      expect(notes[1].pitch).toBe(64);
     });
   });
 

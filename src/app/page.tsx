@@ -15,8 +15,9 @@ import {
   ExportPanel,
   HardwareSettings,
   ProjectBrowser,
+  MotifLibrary,
 } from '@/components/music';
-import { Music, Settings2, Layers, Sparkles, FolderOpen } from 'lucide-react';
+import { Music, Settings2, Layers, Sparkles, FolderOpen, Star } from 'lucide-react';
 
 // Simple mounted check without useEffect
 const emptySubscribe = () => () => {};
@@ -143,6 +144,14 @@ export default function LocoTunesPage() {
                     <Settings2 className="h-4 w-4 mr-2" />
                     Hardware
                   </TabsTrigger>
+
+                  <TabsTrigger
+                    value="motifs"
+                    className="data-[state=active]:bg-violet-500 data-[state=active]:text-white"
+                  >
+                    <Star className="h-4 w-4 mr-2" />
+                    Motifs
+                  </TabsTrigger>
                   <TabsTrigger
                     value="projects"
                     className="data-[state=active]:bg-violet-500 data-[state=active]:text-white"
@@ -168,6 +177,10 @@ export default function LocoTunesPage() {
                   <HardwareSettings />
                 </TabsContent>
 
+
+                <TabsContent value="motifs" className="mt-4">
+                  <MotifLibrary />
+                </TabsContent>
                 <TabsContent value="projects" className="mt-4">
                   <ProjectBrowser />
                 </TabsContent>
