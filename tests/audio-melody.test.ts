@@ -5,6 +5,7 @@ import {
   generateCounterMelodyNotes,
   quantizeNotes
 } from '@/lib/audio/melody';
+import type { Motif } from '@/types/music';
 
 describe('Audio Melody Generator', () => {
   describe('generateMelodyNotes', () => {
@@ -72,6 +73,36 @@ describe('Audio Melody Generator', () => {
       // We just ensure they both produce valid arrays.
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
+    });
+
+    it('should generate melody using a seed motif and adjust to target key/BPM', () => {
+      const seedMotif: Motif = {
+        id: 'test-motif',
+        name: 'Test Motif',
+        originalKey: 'C',
+        originalBpm: 60,
+        notes: [
+          { pitch: 60, velocity: 100, startTime: 0, duration: 1 }, // C4
+          { pitch: 64, velocity: 100, startTime: 1, duration: 1 }, // E4
+        ]
+      };
+
+      const notes = generateMelodyNotes(
+        62, // D4
+        'minor',
+        'electronic',
+        'happy',
+        120, // 120 bpm
+        1, // 1 bar = 4 beats = 2 seconds
+        0, // complexity 0 to minimize randomness
+        [],
+        'verse',
+        seedMotif
+      );
+
+      expect(notes.length).toBeGreaterThan(0);
+      // Original 60 shifted by 2 = 62. Should be exact or close due to snapping
+      expect(Math.abs(notes[0].pitch - 62)).toBeLessThanOrEqual(2);
     });
   });
 

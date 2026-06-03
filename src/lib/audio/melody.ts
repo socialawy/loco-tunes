@@ -1,8 +1,8 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
-import { getScale } from './chords';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
+import { getScale, noteToMidi } from './chords';
 
 // Melody rhythm patterns by genre
 const MELODY_RHYTHM_PATTERNS: Record<Genre, number[][]> = {
@@ -66,11 +66,85 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  seedMotif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
+
+  // Use seed motif if provided
+  if (seedMotif && seedMotif.notes.length > 0) {
+    const originalRootMidi = noteToMidi(seedMotif.originalKey, 4);
+    const pitchShift = rootMidi - originalRootMidi;
+    const timeScale = 60 / seedMotif.originalBpm / beatDuration; // Scale relative to BPM change
+
+    // Find the total duration of the original motif
+    const motifDuration = Math.max(...seedMotif.notes.map(n => n.startTime + n.duration));
+    const targetDuration = numBars * 4 * beatDuration;
+
+    let currentTimeOffset = 0;
+
+    // Loop the motif to fill the new duration
+    while (currentTimeOffset < targetDuration) {
+      for (const note of seedMotif.notes) {
+        const newStartTime = currentTimeOffset + note.startTime * timeScale;
+
+        if (newStartTime >= targetDuration) break;
+
+        // Apply variation based on complexity
+        let notePitch = note.pitch + pitchShift;
+        let noteVelocity = note.velocity;
+
+        if (complexity > 0.5 && Math.random() < complexity * 0.3) {
+          // Sometimes shift by an octave or to nearest scale note
+          const octaveShift = Math.random() > 0.5 ? 12 : -12;
+          notePitch += octaveShift;
+        }
+
+        // Snap to scale to stay in key
+        const pitchClass = notePitch % 12;
+        const rootClass = rootMidi % 12;
+        const relativePitch = (pitchClass - rootClass + 12) % 12;
+
+        // Very basic scale snapping
+        const isNoteInScale = SCALES[scaleName]?.includes(relativePitch);
+
+        if (!isNoteInScale && SCALES[scaleName]) {
+          // Find nearest note in scale
+          let nearestDist = 12;
+          let nearestNote = relativePitch;
+          for (const scaleNote of SCALES[scaleName]) {
+            const dist = Math.min(
+              Math.abs(scaleNote - relativePitch),
+              12 - Math.abs(scaleNote - relativePitch)
+            );
+            if (dist < nearestDist) {
+              nearestDist = dist;
+              nearestNote = scaleNote;
+            }
+          }
+
+          const shift = nearestNote - relativePitch;
+          notePitch += shift;
+        }
+
+        notes.push({
+          pitch: notePitch,
+          velocity: Math.max(0, Math.min(127, noteVelocity + (Math.random() * 20 - 10))),
+          startTime: newStartTime,
+          duration: note.duration * timeScale * (0.9 + Math.random() * 0.2), // slight variation
+        });
+      }
+
+      currentTimeOffset += motifDuration * timeScale;
+
+      // Add small gap between loops
+      currentTimeOffset += beatDuration * (complexity > 0.5 ? 1 : 2);
+    }
+
+    return notes;
+  }
   
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];

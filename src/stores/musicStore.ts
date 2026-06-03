@@ -9,6 +9,7 @@ import type {
   EffectSettings, 
   HardwareTier,
   Stem,
+  Motif,
 } from '@/types/music';
 import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
@@ -38,6 +39,10 @@ interface MusicStore {
   projects: Project[];
   currentProjectId: string | null;
 
+  // Motifs
+  savedMotifs: Motif[];
+  selectedMotifId: string | null;
+
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
@@ -62,6 +67,11 @@ interface MusicStore {
   updateCurrentTime: (time: number) => void;
   restartPlayback: () => void;
 
+  // Motif Actions
+  saveMotif: (stemType: StemType) => void;
+  deleteMotif: (id: string) => void;
+  selectMotif: (id: string | null) => void;
+
   // Project Actions
   fetchProjects: () => Promise<void>;
   saveCurrentProject: () => Promise<void>;
@@ -80,6 +90,8 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   currentTrack: null,
   projects: [],
   currentProjectId: null,
+  savedMotifs: [],
+  selectedMotifId: null,
   isPlaying: false,
   currentTime: 0,
   effects: DEFAULT_EFFECTS,
@@ -417,6 +429,33 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
+
+  // --- Motif Actions ---
+  saveMotif: (stemType: StemType) => {
+    const { currentTrack, params } = get();
+    if (!currentTrack) return;
+
+    const stem = currentTrack.stems.find(s => s.type === stemType);
+    if (!stem || stem.notes.length === 0) return;
+
+    const newMotif: Motif = {
+      id: crypto.randomUUID(),
+      name: `${params.genre} ${stemType} motif - ${new Date().toLocaleTimeString()}`,
+      notes: stem.notes,
+      originalKey: params.key,
+      originalBpm: params.bpm,
+    };
+
+    set((state) => ({ savedMotifs: [...state.savedMotifs, newMotif] }));
+    toast.success('Motif saved successfully!');
+  },
+
+  deleteMotif: (id: string) => set((state) => ({
+    savedMotifs: state.savedMotifs.filter(m => m.id !== id),
+    selectedMotifId: state.selectedMotifId === id ? null : state.selectedMotifId,
+  })),
+
+  selectMotif: (id: string | null) => set({ selectedMotifId: id }),
 
   // --- Project Actions ---
 

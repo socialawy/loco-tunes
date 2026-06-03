@@ -63,9 +63,17 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    selectedMotifId,
+    savedMotifs,
   } = useMusicStore();
   
   const handleGenerate = () => {
+    const seedMotif = savedMotifs.find(m => m.id === selectedMotifId);
+    if (selectedMotifId && seedMotif) {
+      setParams({ seedMotif });
+    } else {
+      setParams({ seedMotif: undefined });
+    }
     generateTrack();
   };
   

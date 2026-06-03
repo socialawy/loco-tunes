@@ -8,6 +8,14 @@ export type SectionType = 'intro' | 'verse' | 'chorus' | 'outro';
 
 export type StemType = 'drums' | 'bass' | 'melody' | 'harmony';
 
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalKey: string;
+  originalBpm: number;
+}
+
 export interface GenerationParams {
   prompt: string;
   bpm: number;
@@ -17,6 +25,7 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  seedMotif?: Motif;
 }
 
 export interface Note {

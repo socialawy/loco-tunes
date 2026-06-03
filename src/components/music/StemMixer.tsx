@@ -6,7 +6,7 @@ import { Slider } from '@/components/ui/slider';
 import { useMusicStore } from '@/stores/musicStore';
 import type { StemType } from '@/types/music';
 import { STEM_COLORS } from '@/types/music';
-import { Volume2, VolumeX, RefreshCw, Headphones, Shuffle } from 'lucide-react';
+import { Volume2, VolumeX, RefreshCw, Headphones, Shuffle, Save } from 'lucide-react';
 
 const STEM_LABELS: Record<StemType, string> = {
   drums: 'Drums',
@@ -31,6 +31,7 @@ export function StemMixer() {
     regenerateStem,
     generateStemVariation,
     isGenerating,
+    saveMotif,
   } = useMusicStore();
   
   if (!currentTrack) {
@@ -100,6 +101,19 @@ export function StemMixer() {
                   >
                     <Shuffle className="h-4 w-4" />
                   </Button>
+
+                  {/* Save Motif Button */}
+                  {(stem.type === 'melody' || stem.type === 'bass') && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => saveMotif(stem.type)}
+                      className="h-8 w-8 text-gray-400 hover:text-violet-400 hover:bg-violet-500/10"
+                      title="Save as Motif"
+                    >
+                      <Save className="h-4 w-4" />
+                    </Button>
+                  )}
 
                   {/* Solo Button */}
                   <Button
