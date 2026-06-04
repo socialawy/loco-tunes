@@ -18,6 +18,7 @@ import {
 import { generateDrumNotes } from './drums';
 import { generateMelodyNotes } from './melody';
 import { v4 as generateId } from 'uuid';
+import { loadMotif } from '../storage';
 
 // Helper types for hardware detection
 interface ExtendedNavigator extends Navigator {
@@ -34,7 +35,15 @@ interface ExtendedPerformance extends Performance {
 }
 
 export async function generateTrack(params: GenerationParams): Promise<Track> {
-  const { bpm, genre, mood, duration, key, scale, complexity } = params;
+  const { bpm, genre, mood, duration, key, scale, complexity, useSavedMotifId } = params;
+
+  let savedMotifNotes: Note[] | undefined;
+  if (useSavedMotifId) {
+    const motif = await loadMotif(useSavedMotifId);
+    if (motif) {
+      savedMotifNotes = motif.notes;
+    }
+  }
   
   // Convert key to MIDI note number
   const rootMidi = noteToMidi(key, 4);
@@ -111,7 +120,7 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     bassNotes.push(...sectionBass);
 
     // Melody
-    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, savedMotifNotes);
     const shiftedMelody = sectionMelody.map(n => ({
       ...n,
       startTime: n.startTime + sectionStartTime
@@ -197,7 +206,15 @@ export async function regenerateStem(
         sectionNotes = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
         break;
       case 'melody':
-        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type)
+        // For regeneration, we could also use the saved motif if it was part of params, but since regenerateStem doesn't load it async right now,
+        // we'll just check if we can fetch it or ignore. Let's ignore it for now or assume it's loaded in the future if we refactor.
+        // Or wait, we can just load it if present in track.params:
+        let motifNotes: Note[] | undefined;
+        if (track.params.useSavedMotifId) {
+           const motif = await loadMotif(track.params.useSavedMotifId);
+           if (motif) motifNotes = motif.notes;
+        }
+        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, motifNotes)
           .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
         break;
       case 'harmony':
@@ -264,7 +281,12 @@ export async function generateStemVariation(
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType);
+      let motifNotesForVar: Note[] | undefined;
+      if (params.useSavedMotifId) {
+         const motif = await loadMotif(params.useSavedMotifId);
+         if (motif) motifNotesForVar = motif.notes;
+      }
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType, motifNotesForVar);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);

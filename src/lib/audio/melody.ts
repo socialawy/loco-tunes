@@ -66,12 +66,69 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motifNotes?: Note[]
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
   
+  if (motifNotes && motifNotes.length > 0) {
+    // Generate melody based on the provided motif
+    // Calculate motif properties to map them to the new context
+    const firstMotifNote = motifNotes[0];
+    const motifDuration = motifNotes[motifNotes.length - 1].startTime + motifNotes[motifNotes.length - 1].duration - firstMotifNote.startTime;
+
+    // We will loop the motif if needed or spread it
+    let currentTime = 0;
+    const totalDuration = numBars * 4 * beatDuration;
+
+    while (currentTime < totalDuration) {
+      for (const motifNote of motifNotes) {
+        // Stop if we exceed the section duration
+        if (currentTime + (motifNote.startTime - firstMotifNote.startTime) >= totalDuration) {
+          break;
+        }
+
+        // Snap pitch to closest note in the new scale
+        let closestPitch = scale[0];
+        let minDiff = Infinity;
+
+        // Find closest pitch in scale, across octaves
+        const extendedScale: number[] = [];
+        for (let octave = -1; octave <= 2; octave++) {
+          scale.forEach(note => extendedScale.push(note + octave * 12));
+        }
+
+        for (const scalePitch of extendedScale) {
+          const diff = Math.abs(scalePitch - motifNote.pitch);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestPitch = scalePitch;
+          }
+        }
+
+        // Dynamic velocity adjustments
+        const contourProgress = (currentTime + motifNote.startTime - firstMotifNote.startTime) / totalDuration;
+        let velocityAdjust = 0;
+        if (sectionType === 'verse') velocityAdjust = Math.floor(contourProgress * 20);
+        else if (sectionType === 'chorus') velocityAdjust = 20;
+        else if (sectionType === 'outro') velocityAdjust = -Math.floor(contourProgress * 20);
+        else if (sectionType === 'intro') velocityAdjust = -10;
+
+        notes.push({
+          pitch: closestPitch,
+          velocity: Math.max(0, Math.min(127, motifNote.velocity + velocityAdjust)),
+          startTime: currentTime + (motifNote.startTime - firstMotifNote.startTime),
+          duration: motifNote.duration,
+        });
+      }
+      currentTime += Math.max(motifDuration, beatDuration * 4); // Advance by motif duration or at least one bar
+    }
+
+    return notes;
+  }
+
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
   for (let octave = -1; octave <= 2; octave++) {
