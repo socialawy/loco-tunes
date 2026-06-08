@@ -63,6 +63,9 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    motifs,
+    selectedMotifId,
+    setSelectedMotif,
   } = useMusicStore();
   
   const handleGenerate = () => {
@@ -84,7 +87,36 @@ export function SimpleMode() {
           className="bg-[#1a1a2e] border-[#2a2a4e] text-white placeholder-gray-500 focus:border-violet-500"
         />
       </div>
-      
+
+      {/* Motif Select */}
+      {motifs.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-gray-300">Use Saved Motif</Label>
+          <Select
+            value={selectedMotifId || 'none'}
+            onValueChange={(value) => setSelectedMotif(value === 'none' ? null : value)}
+          >
+            <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+              <SelectItem value="none" className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]">
+                None (Random Melody)
+              </SelectItem>
+              {motifs.map((motif) => (
+                <SelectItem
+                  key={motif.id}
+                  value={motif.id}
+                  className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+                >
+                  {motif.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Genre & Mood Row */}
       <div className="grid grid-cols-2 gap-4">
         {/* Genre */}

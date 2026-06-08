@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -66,7 +66,8 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -77,6 +78,51 @@ export function generateMelodyNotes(
   for (let octave = -1; octave <= 2; octave++) {
     scale.forEach(note => extendedScale.push(note + octave * 12));
   }
+
+  // Motif generation logic
+  if (motif && motif.notes && motif.notes.length > 0) {
+    const timeScale = (60 / bpm) / (60 / motif.originalBpm);
+    const motifDuration = motif.notes[motif.notes.length - 1].startTime * timeScale + motif.notes[motif.notes.length - 1].duration * timeScale;
+    const paddedMotifDuration = Math.ceil(motifDuration / (4 * beatDuration)) * (4 * beatDuration); // Snap to nearest bar
+
+    let currentTime = 0;
+    const totalDuration = numBars * 4 * beatDuration;
+
+    while (currentTime < totalDuration) {
+      for (const motifNote of motif.notes) {
+        const scaledStartTime = motifNote.startTime * timeScale;
+        const scaledDuration = motifNote.duration * timeScale;
+
+        if (currentTime + scaledStartTime >= totalDuration) {
+          continue; // Don't add notes past the section duration
+        }
+
+        // Find closest pitch in scale
+        const targetPitch = rootMidi + motifNote.pitch;
+        let closestPitch = targetPitch;
+        let minDiff = Infinity;
+
+        for (const scaleNote of extendedScale) {
+          const diff = Math.abs(scaleNote - targetPitch);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestPitch = scaleNote;
+          }
+        }
+
+        notes.push({
+          pitch: closestPitch,
+          velocity: motifNote.velocity || 80,
+          startTime: currentTime + scaledStartTime,
+          duration: scaledDuration,
+        });
+      }
+      currentTime += paddedMotifDuration || (4 * beatDuration); // Prevent infinite loop if duration is 0
+    }
+
+    return notes;
+  }
+
   
   // Get mood-based parameters
   const { contour, jumpiness } = getMoodBias(mood);

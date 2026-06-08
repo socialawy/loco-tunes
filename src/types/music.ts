@@ -17,6 +17,7 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  motifId?: string;
 }
 
 export interface Note {
@@ -35,6 +36,16 @@ export interface Stem {
   solo: boolean;
   color: string;
   synthParams?: SynthParams;
+}
+
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  originalKey: string;
+  originalScale: string;
 }
 
 export interface Track {
@@ -93,7 +104,12 @@ export interface MusicState {
   // Current track
   currentTrack: Track | null;
   
-  // Playback state
+
+  // Motifs
+  motifs: Motif[];
+  selectedMotifId: string | null;
+
+// Playback state
   isPlaying: boolean;
   currentTime: number;
   
@@ -109,6 +125,10 @@ export interface MusicState {
   
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
+  saveMotif: (name: string) => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
+  setSelectedMotif: (id: string | null) => void;
+  fetchMotifs: () => Promise<void>;
   generateTrack: () => Promise<void>;
   playTrack: () => void;
   pauseTrack: () => void;

@@ -5,10 +5,13 @@ import {
   getProjects,
   deleteProject,
   exportProject,
-  importProject
+  importProject,
+  saveMotifToStorage,
+  getMotifsFromStorage,
+  deleteMotifFromStorage
 } from '@/lib/storage';
 import * as idbKeyval from 'idb-keyval';
-import type { Project, Track, EffectSettings } from '@/types/music';
+import type { Project, Track, EffectSettings, Motif } from '@/types/music';
 
 // Mock idb-keyval completely
 vi.mock('idb-keyval', () => {
@@ -204,5 +207,36 @@ describe('Storage Utilities', () => {
 
       await expect(importProject(file)).rejects.toThrow('Invalid project file format');
     });
+  });
+});
+
+describe('Motif Storage', () => {
+  const mockMotif: Motif = {
+    id: 'test-motif-123',
+    name: 'My Cool Motif',
+    notes: [{ pitch: 0, velocity: 80, startTime: 0, duration: 0.5 }],
+    originalBpm: 120,
+    originalKey: 'C',
+    originalScale: 'minor'
+  };
+
+  it('saves and retrieves a motif', async () => {
+    await saveMotifToStorage(mockMotif);
+    const motifs = await getMotifsFromStorage();
+
+    expect(motifs.length).toBe(1);
+    expect(motifs[0].id).toBe(mockMotif.id);
+    expect(motifs[0].name).toBe(mockMotif.name);
+    expect(motifs[0].notes.length).toBe(1);
+  });
+
+  it('deletes a motif', async () => {
+    await saveMotifToStorage(mockMotif);
+    let motifs = await getMotifsFromStorage();
+    expect(motifs.length).toBe(1);
+
+    await deleteMotifFromStorage(mockMotif.id);
+    motifs = await getMotifsFromStorage();
+    expect(motifs.length).toBe(0);
   });
 });

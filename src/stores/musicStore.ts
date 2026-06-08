@@ -12,10 +12,13 @@ import type {
 } from '@/types/music';
 import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
+import { noteToMidi } from '@/lib/audio/chords';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
-import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
+import { saveProject, loadProject, deleteProject, getProjects, saveMotifToStorage, getMotifsFromStorage, deleteMotifFromStorage } from '@/lib/storage';
 import type { Project } from '@/types/music';
+import type { Motif } from '@/types/music';
+import { v4 as generateId } from 'uuid';
 
 interface MusicStore {
   // Generation params
@@ -38,6 +41,10 @@ interface MusicStore {
   projects: Project[];
   currentProjectId: string | null;
 
+  // Motifs
+  motifs: Motif[];
+  selectedMotifId: string | null;
+
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
@@ -46,6 +53,10 @@ interface MusicStore {
   
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
+  saveMotif: (name: string) => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
+  setSelectedMotif: (id: string | null) => void;
+  fetchMotifs: () => Promise<void>;
   generateTrack: () => Promise<void>;
   regenerateStem: (stemType: StemType) => Promise<void>;
   generateStemVariation: (stemType: StemType) => Promise<void>;
@@ -80,6 +91,8 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   currentTrack: null,
   projects: [],
   currentProjectId: null,
+  motifs: [],
+  selectedMotifId: null,
   isPlaying: false,
   currentTime: 0,
   effects: DEFAULT_EFFECTS,
@@ -146,7 +159,10 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     set({ isGenerating: true });
     
     try {
-      const newStem = await regenerateStem(currentTrack, stemType);
+      const { selectedMotifId, motifs } = get();
+      const motif = selectedMotifId ? motifs.find(m => m.id === selectedMotifId) : undefined;
+
+      const newStem = await regenerateStem(currentTrack, stemType, motif);
       
       set((state) => ({
         currentTrack: state.currentTrack ? {
@@ -418,6 +434,76 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
 
+  // --- Motif Actions ---
+
+  saveMotif: async (name: string) => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+
+    const melodyStem = currentTrack.stems.find(s => s.type === 'melody');
+    if (!melodyStem || melodyStem.notes.length === 0) {
+      toast.error('No melody generated to save');
+      return;
+    }
+
+    const firstNoteStart = melodyStem.notes[0].startTime;
+    const rootMidi = noteToMidi(currentTrack.params.key, 4);
+
+    const normalizedNotes = melodyStem.notes.map(note => ({
+      ...note,
+      startTime: note.startTime - firstNoteStart,
+      pitch: note.pitch - rootMidi
+    }));
+
+    const newMotif: Motif = {
+      id: generateId(),
+      name,
+      notes: normalizedNotes,
+      originalBpm: currentTrack.params.bpm,
+      originalKey: currentTrack.params.key,
+      originalScale: currentTrack.params.scale
+    };
+
+    try {
+      await saveMotifToStorage(newMotif);
+      await get().fetchMotifs();
+      toast.success('Motif saved successfully');
+    } catch (err) {
+      console.error('Failed to save motif:', err);
+      toast.error('Failed to save motif');
+    }
+  },
+
+  deleteMotif: async (id: string) => {
+    try {
+      await deleteMotifFromStorage(id);
+
+      const { selectedMotifId } = get();
+      if (selectedMotifId === id) {
+        set({ selectedMotifId: null });
+      }
+
+      await get().fetchMotifs();
+      toast.success('Motif deleted');
+    } catch (err) {
+      console.error('Failed to delete motif:', err);
+      toast.error('Failed to delete motif');
+    }
+  },
+
+  setSelectedMotif: (id: string | null) => {
+    set({ selectedMotifId: id });
+  },
+
+  fetchMotifs: async () => {
+    try {
+      const motifs = await getMotifsFromStorage();
+      set({ motifs });
+    } catch (err) {
+      console.error('Failed to fetch motifs:', err);
+    }
+  },
+
   // --- Project Actions ---
 
   fetchProjects: async () => {
@@ -427,6 +513,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     } catch (err) {
       console.error('Failed to fetch projects:', err);
     }
+    await get().fetchMotifs();
   },
 
   saveCurrentProject: async () => {
