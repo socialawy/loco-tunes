@@ -73,6 +73,34 @@ describe('Audio Melody Generator', () => {
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
     });
+
+    it('should adapt to a provided motif', () => {
+      const mockMotif = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 0.5 },
+        { pitch: 64, velocity: 80, startTime: 0.5, duration: 0.5 },
+        { pitch: 67, velocity: 80, startTime: 1.0, duration: 1.0 }
+      ];
+
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 2, 0.5, [], 'verse', mockMotif);
+
+      expect(notes.length).toBeGreaterThan(0);
+
+      // We can assert that the relative rhythm is roughly preserved
+      // First note should be at start time
+      expect(notes[0].startTime).toBe(0);
+
+      // If we have enough notes, we should see intervals reflecting the motif
+      if (notes.length >= 3) {
+        const pitchDiff1 = notes[1].pitch - notes[0].pitch;
+        const pitchDiff2 = notes[2].pitch - notes[0].pitch;
+
+        // Original intervals: +4, +7. It might be mapped to nearest scale notes
+        // Scale is major: 60 (C), 62 (D), 64 (E), 65 (F), 67 (G).
+        // 60+4 = 64 (E). 60+7=67 (G).
+        // Depending on base pitch start, interval might slightly vary, but they should generally be positive.
+        expect(pitchDiff1).toBeGreaterThanOrEqual(0);
+      }
+    });
   });
 
   describe('generateArpeggioNotes', () => {

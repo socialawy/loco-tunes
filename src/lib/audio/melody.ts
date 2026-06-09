@@ -66,7 +66,8 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Note[]
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -87,9 +88,129 @@ export function generateMelodyNotes(
   
   let currentTime = 0;
   let currentScaleIndex = Math.floor(extendedScale.length / 2); // Start in middle of range
-  let barCount = 0;
   let noteIndex = 0;
   
+  // If a motif is provided, extract its relative pattern
+  interface MotifStep {
+    relativePitch: number; // Interval from the motif's first note
+    relativeStart: number; // Time relative to motif start (normalized to beats)
+    relativeDuration: number; // Duration normalized to beats
+    velocity: number;
+  }
+
+  let motifSteps: MotifStep[] | null = null;
+  let motifLengthBeats = 16; // Default pattern length in beats (4 bars)
+
+  if (motif && motif.length > 0) {
+    motifSteps = [];
+
+    // Sort motif notes by time just in case
+    const sortedMotif = [...motif].sort((a, b) => a.startTime - b.startTime);
+
+    // Find the first note to use as a baseline
+    const firstNote = sortedMotif[0];
+    const basePitch = firstNote.pitch;
+    const baseTime = firstNote.startTime;
+
+    // Original tempo might be different, but we'll assume the original beatDuration
+    // was what made the motif. To make it tempo-independent, we don't know the exact
+    // original tempo here, but we can assume relative gaps represent rhythm.
+    // Instead of complex tempo mapping, we just map the rhythm into our new beatDuration grid.
+    // We assume the motif spans some number of bars in the original tempo.
+    // Let's normalize it so we just keep intervals and scale them to our tempo.
+
+    const lastNote = sortedMotif[sortedMotif.length - 1];
+    const motifDurationSecs = (lastNote.startTime + lastNote.duration) - baseTime;
+
+    // We'll map the motif's shape onto our scale by finding the nearest scale note
+    // for each relative interval.
+
+    sortedMotif.forEach(n => {
+      motifSteps!.push({
+        relativePitch: n.pitch - basePitch,
+        // Keep raw time differences, we'll scale them in the loop assuming
+        // they were generated with some BPM. Without original BPM, we just
+        // treat relativeStart as literal seconds and rely on it sounding
+        // similar if tempi are close, OR we can try to guess beat intervals.
+        // For simplicity, we just use the raw intervals and adjust by the new beatDuration
+        // relative to a standard 120BPM (0.5s) to avoid stretching too much if BPM changed.
+        // Actually, let's just use the rhythm as-is, but scaled if we want.
+        // To be safer, we'll use raw relative seconds and let them play out.
+        relativeStart: n.startTime - baseTime,
+        relativeDuration: n.duration,
+        velocity: n.velocity
+      });
+    });
+
+    motifLengthBeats = Math.max(16, Math.ceil((motifDurationSecs / beatDuration)));
+  }
+
+  if (motifSteps) {
+    // Generate melody by looping/adapting the motif
+    // Start base note near the middle of the new scale
+    currentScaleIndex = Math.floor(extendedScale.length / 2);
+    const baseNewPitch = extendedScale[currentScaleIndex];
+
+    while (currentTime < numBars * 4 * beatDuration) {
+      // Find where we are in the motif loop
+      const loopTime = currentTime % (motifLengthBeats * beatDuration);
+
+      // If we are at the start of a loop iteration, we can shift the base pitch slightly
+      // to create a progression effect (sequence)
+      if (loopTime === 0 && currentTime > 0) {
+        if (Math.random() > 0.5) {
+            currentScaleIndex = Math.max(0, Math.min(extendedScale.length - 1, currentScaleIndex + (Math.random() > 0.5 ? 1 : -1)));
+        }
+      }
+
+      const newBasePitch = extendedScale[currentScaleIndex];
+
+      for (const step of motifSteps) {
+        const stepTime = currentTime + step.relativeStart;
+        if (stepTime >= numBars * 4 * beatDuration) continue;
+
+        // Map the relative pitch to the new scale
+        const targetPitch = newBasePitch + step.relativePitch;
+
+        // Find the closest note in the current extended scale
+        let closestScalePitch = extendedScale[0];
+        let minDiff = Math.abs(targetPitch - closestScalePitch);
+
+        for (let i = 1; i < extendedScale.length; i++) {
+          const diff = Math.abs(targetPitch - extendedScale[i]);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestScalePitch = extendedScale[i];
+          }
+        }
+
+        // Occasional variations for complexity
+        const shouldVary = Math.random() < (complexity * 0.2);
+        let finalPitch = closestScalePitch;
+
+        if (shouldVary) {
+             const currentIndex = extendedScale.indexOf(closestScalePitch);
+             if (currentIndex !== -1) {
+                 const offset = Math.random() > 0.5 ? 1 : -1;
+                 const newIndex = Math.max(0, Math.min(extendedScale.length - 1, currentIndex + offset));
+                 finalPitch = extendedScale[newIndex];
+             }
+        }
+
+        notes.push({
+          pitch: finalPitch,
+          velocity: Math.max(0, Math.min(127, step.velocity + (Math.random() * 20 - 10))),
+          startTime: stepTime,
+          duration: step.relativeDuration * (0.9 + Math.random() * 0.2), // slight timing variation
+        });
+      }
+
+      currentTime += motifLengthBeats * beatDuration;
+    }
+
+    return notes;
+  }
+
   while (currentTime < numBars * 4 * beatDuration) {
     const barProgress = (currentTime % (4 * beatDuration)) / (4 * beatDuration);
     const patternIndex = noteIndex % selectedPattern.length;

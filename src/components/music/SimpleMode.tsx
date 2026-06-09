@@ -15,7 +15,8 @@ import {
 import { useMusicStore } from '@/stores/musicStore';
 
 import type { Genre, Mood } from '@/types/music';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, Music } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 
 const GENRES: Genre[] = ['electronic', 'hiphop', 'ambient', 'rock', 'jazz'];
 const MOODS: Mood[] = ['happy', 'sad', 'energetic', 'calm', 'dark', 'uplifting'];
@@ -62,6 +63,8 @@ export function SimpleMode() {
     isGenerating, 
     generationProgress,
     hardwareTier,
+    savedMotif,
+    clearMotif,
     currentTrack,
   } = useMusicStore();
   
@@ -257,6 +260,36 @@ export function SimpleMode() {
         />
       </div>
       
+            {/* Motif Usage Switch */}
+      {savedMotif && (
+        <div className="flex items-center justify-between p-3 bg-[#1a1a2e] rounded-lg border border-violet-500/30">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded bg-violet-500/20 flex items-center justify-center">
+              <Music className="w-4 h-4 text-violet-400" />
+            </div>
+            <div>
+              <Label htmlFor="use-motif" className="text-white cursor-pointer block">Use Saved Motif</Label>
+              <span className="text-xs text-gray-400">Apply saved melody shape</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="use-motif"
+              checked={params.useSavedMotif}
+              onCheckedChange={(checked) => setParams({ useSavedMotif: checked })}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearMotif}
+              className="text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 h-8"
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Generate Button */}
       <Button
         onClick={handleGenerate}

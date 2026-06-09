@@ -17,6 +17,7 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  useSavedMotif?: boolean;
 }
 
 export interface Note {
@@ -153,6 +154,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   key: 'C',
   scale: 'minor',
   complexity: 0.5,
+  useSavedMotif: false,
 };
 
 export const DEFAULT_EFFECTS: EffectSettings = {

@@ -9,6 +9,7 @@ import type {
   EffectSettings, 
   HardwareTier,
   Stem,
+  Note,
 } from '@/types/music';
 import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
@@ -34,6 +35,9 @@ interface MusicStore {
   // Hardware
   hardwareTier: HardwareTier;
   
+  // Motif state
+  savedMotif: Note[] | null;
+
   // Projects
   projects: Project[];
   currentProjectId: string | null;
@@ -62,6 +66,10 @@ interface MusicStore {
   updateCurrentTime: (time: number) => void;
   restartPlayback: () => void;
 
+  // Motif actions
+  saveMotif: (notes: Note[]) => void;
+  clearMotif: () => void;
+
   // Project Actions
   fetchProjects: () => Promise<void>;
   saveCurrentProject: () => Promise<void>;
@@ -84,6 +92,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   currentTime: 0,
   effects: DEFAULT_EFFECTS,
   hardwareTier: detectHardwareCapabilities(),
+  savedMotif: null,
   mode: 'simple',
   isGenerating: false,
   generationProgress: 0,
@@ -110,7 +119,8 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       set({ generationProgress: 20 });
       
-      const track = await generateTrack(limitedParams);
+      const motifOptions = params.useSavedMotif && get().savedMotif ? { savedMotif: get().savedMotif! } : {};
+      const track = await generateTrack(limitedParams, motifOptions);
       
       set({ 
         currentTrack: track, 
@@ -146,7 +156,8 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     set({ isGenerating: true });
     
     try {
-      const newStem = await regenerateStem(currentTrack, stemType);
+      const motifOptions = get().params.useSavedMotif && get().savedMotif ? { savedMotif: get().savedMotif! } : {};
+      const newStem = await regenerateStem(currentTrack, stemType, motifOptions);
       
       set((state) => ({
         currentTrack: state.currentTrack ? {
@@ -417,6 +428,20 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
+
+  // --- Motif Actions ---
+  saveMotif: (notes: Note[]) => {
+    set({ savedMotif: [...notes] });
+    toast.success('Melody motif saved');
+  },
+
+  clearMotif: () => {
+    set((state) => ({
+      savedMotif: null,
+      params: { ...state.params, useSavedMotif: false }
+    }));
+    toast.success('Saved motif cleared');
+  },
 
   // --- Project Actions ---
 
