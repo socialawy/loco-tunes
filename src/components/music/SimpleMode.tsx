@@ -15,7 +15,7 @@ import {
 import { useMusicStore } from '@/stores/musicStore';
 
 import type { Genre, Mood } from '@/types/music';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, Heart, X } from 'lucide-react';
 
 const GENRES: Genre[] = ['electronic', 'hiphop', 'ambient', 'rock', 'jazz'];
 const MOODS: Mood[] = ['happy', 'sad', 'energetic', 'calm', 'dark', 'uplifting'];
@@ -63,6 +63,10 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    savedMotifs,
+    activeMotifId,
+    setActiveMotifId,
+    deleteMotifData,
   } = useMusicStore();
   
   const handleGenerate = () => {
@@ -83,6 +87,49 @@ export function SimpleMode() {
           onChange={(e) => setParams({ prompt: e.target.value })}
           className="bg-[#1a1a2e] border-[#2a2a4e] text-white placeholder-gray-500 focus:border-violet-500"
         />
+      </div>
+
+      {/* Motif Selection */}
+      <div className="space-y-2">
+        <Label className="text-gray-300 flex items-center gap-2">
+          <Heart className="h-4 w-4 text-pink-400" />
+          Melody Motif (optional)
+        </Label>
+        <Select
+          value={activeMotifId || 'none'}
+          onValueChange={(value) => setActiveMotifId(value === 'none' ? null : value)}
+        >
+          <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+            <SelectValue placeholder="Select a saved motif" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e] max-h-48 overflow-y-auto">
+            <SelectItem value="none" className="text-gray-400 hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]">
+              None (Generate random melody)
+            </SelectItem>
+            {savedMotifs.map((motif) => (
+              <SelectItem
+                key={motif.id}
+                value={motif.id}
+                className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span>{motif.name} ({motif.originalBpm} BPM)</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-gray-500 hover:text-red-400 ml-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteMotifData(motif.id);
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       
       {/* Genre & Mood Row */}

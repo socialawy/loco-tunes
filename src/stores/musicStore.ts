@@ -9,13 +9,15 @@ import type {
   EffectSettings, 
   HardwareTier,
   Stem,
+  SavedMotif,
 } from '@/types/music';
 import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
-import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
+import { saveProject, loadProject, deleteProject, getProjects, saveMotif, getMotifs, deleteMotif } from '@/lib/storage';
 import type { Project } from '@/types/music';
+import { v4 as uuidv4 } from 'uuid';
 
 interface MusicStore {
   // Generation params
@@ -37,6 +39,10 @@ interface MusicStore {
   // Projects
   projects: Project[];
   currentProjectId: string | null;
+
+  // Motifs
+  savedMotifs: SavedMotif[];
+  activeMotifId: string | null;
 
   // UI state
   mode: 'simple' | 'advanced';
@@ -68,6 +74,12 @@ interface MusicStore {
   loadProjectData: (id: string) => Promise<void>;
   deleteProjectData: (id: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
+
+  // Motif Actions
+  fetchMotifsData: () => Promise<void>;
+  saveMotifData: (stem: Stem) => Promise<void>;
+  deleteMotifData: (id: string) => Promise<void>;
+  setActiveMotifId: (id: string | null) => void;
 }
 
 // Variables for auto-save debounce
@@ -80,6 +92,8 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   currentTrack: null,
   projects: [],
   currentProjectId: null,
+  savedMotifs: [],
+  activeMotifId: null,
   isPlaying: false,
   currentTime: 0,
   effects: DEFAULT_EFFECTS,
@@ -96,13 +110,17 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Generate a new track
   generateTrack: async () => {
-    const { params, hardwareTier } = get();
+    const { params, hardwareTier, activeMotifId, savedMotifs } = get();
+
+    // Find active motif
+    const activeMotif = activeMotifId ? savedMotifs.find(m => m.id === activeMotifId) : undefined;
     
     // Limit duration based on hardware tier
     const limitedParams = {
       ...params,
       duration: Math.min(params.duration, hardwareTier.maxDuration),
       complexity: Math.min(params.complexity, hardwareTier.recommendedComplexity),
+      motif: activeMotif,
     };
     
     set({ isGenerating: true, generationProgress: 0 });
@@ -424,6 +442,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       const projects = await getProjects();
       set({ projects });
+      await get().fetchMotifsData();
     } catch (err) {
       console.error('Failed to fetch projects:', err);
     }
@@ -554,4 +573,59 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       toast.error('Failed to delete project');
     }
   },
+
+  // --- Motif Actions ---
+
+  fetchMotifsData: async () => {
+    try {
+      const motifs = await getMotifs();
+      set({ savedMotifs: motifs });
+    } catch (err) {
+      console.error('Failed to fetch motifs:', err);
+    }
+  },
+
+  saveMotifData: async (stem: Stem) => {
+    const { params } = get();
+    if (stem.notes.length === 0) {
+      toast.error('Cannot save empty motif');
+      return;
+    }
+
+    const motif: SavedMotif = {
+      id: uuidv4(),
+      name: `Motif - ${new Date().toLocaleTimeString()}`,
+      notes: stem.notes,
+      originalBpm: params.bpm,
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await saveMotif(motif);
+      await get().fetchMotifsData();
+      toast.success('Melody motif saved!');
+    } catch (err) {
+      console.error('Failed to save motif:', err);
+      toast.error('Failed to save motif');
+    }
+  },
+
+  deleteMotifData: async (id: string) => {
+    try {
+      await deleteMotif(id);
+
+      const { activeMotifId } = get();
+      if (activeMotifId === id) {
+        set({ activeMotifId: null });
+      }
+
+      await get().fetchMotifsData();
+      toast.success('Motif deleted');
+    } catch (err) {
+      console.error('Failed to delete motif:', err);
+      toast.error('Failed to delete motif');
+    }
+  },
+
+  setActiveMotifId: (id: string | null) => set({ activeMotifId: id }),
 }));

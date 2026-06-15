@@ -5,7 +5,15 @@ import { useMusicStore } from '@/stores/musicStore';
 import type { StemType } from '@/types/music';
 import { STEM_COLORS } from '@/types/music';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Heart, X } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const STEM_LABELS: Record<StemType, string> = {
   drums: 'Drums',
@@ -15,7 +23,19 @@ const STEM_LABELS: Record<StemType, string> = {
 };
 
 export function AdvancedMode() {
-  const { currentTrack, currentTime, isPlaying, updateCurrentTime, restartPlayback, stopTrack, playTrack } = useMusicStore();
+  const {
+    currentTrack,
+    currentTime,
+    isPlaying,
+    updateCurrentTime,
+    restartPlayback,
+    stopTrack,
+    playTrack,
+    savedMotifs,
+    activeMotifId,
+    setActiveMotifId,
+    deleteMotifData,
+  } = useMusicStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -212,7 +232,51 @@ export function AdvancedMode() {
   const totalWidth = currentTrack.duration * pixelsPerSecond;
   
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
+      {/* Motif Selection */}
+      <div className="flex items-center gap-4 bg-[#16162a] p-3 rounded-lg border border-[#2a2a4e]">
+        <Label className="text-gray-300 flex items-center gap-2 whitespace-nowrap">
+          <Heart className="h-4 w-4 text-pink-400" />
+          Active Motif:
+        </Label>
+        <Select
+          value={activeMotifId || 'none'}
+          onValueChange={(value) => setActiveMotifId(value === 'none' ? null : value)}
+        >
+          <SelectTrigger className="w-full bg-[#1a1a2e] border-[#2a2a4e] text-white">
+            <SelectValue placeholder="Select a saved motif" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e] max-h-48 overflow-y-auto">
+            <SelectItem value="none" className="text-gray-400 hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]">
+              None (Generate random melody)
+            </SelectItem>
+            {savedMotifs.map((motif) => (
+              <SelectItem
+                key={motif.id}
+                value={motif.id}
+                className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span>{motif.name} ({motif.originalBpm} BPM)</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-gray-500 hover:text-red-400 ml-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteMotifData(motif.id);
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
       {/* Timeline Controls */}
       <div className="flex items-center justify-between p-2 bg-[#16162a] rounded-lg border border-[#2a2a4e]">
         <div className="flex items-center gap-2">
@@ -277,19 +341,20 @@ export function AdvancedMode() {
         />
       </div>
       
-      {/* Time ruler */}
-      <div className="flex justify-between text-xs text-gray-500 px-2">
-        <span>0:00</span>
-        <span>{formatTime(currentTrack.duration / 4)}</span>
-        <span>{formatTime(currentTrack.duration / 2)}</span>
-        <span>{formatTime((currentTrack.duration * 3) / 4)}</span>
-        <span>{formatTime(currentTrack.duration)}</span>
+        {/* Time ruler */}
+        <div className="flex justify-between text-xs text-gray-500 px-2">
+          <span>0:00</span>
+          <span>{formatTime(currentTrack.duration / 4)}</span>
+          <span>{formatTime(currentTrack.duration / 2)}</span>
+          <span>{formatTime((currentTrack.duration * 3) / 4)}</span>
+          <span>{formatTime(currentTrack.duration)}</span>
+        </div>
+
+        {/* Instructions */}
+        <p className="text-xs text-gray-600 text-center">
+          Click anywhere on the timeline to seek • Drag to scrub
+        </p>
       </div>
-      
-      {/* Instructions */}
-      <p className="text-xs text-gray-600 text-center">
-        Click anywhere on the timeline to seek • Drag to scrub
-      </p>
     </div>
   );
 }

@@ -8,6 +8,14 @@ export type SectionType = 'intro' | 'verse' | 'chorus' | 'outro';
 
 export type StemType = 'drums' | 'bass' | 'melody' | 'harmony';
 
+export interface SavedMotif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  createdAt: string;
+}
+
 export interface GenerationParams {
   prompt: string;
   bpm: number;
@@ -17,6 +25,7 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  motif?: SavedMotif;
 }
 
 export interface Note {
@@ -153,6 +162,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   key: 'C',
   scale: 'minor',
   complexity: 0.5,
+  motif: undefined,
 };
 
 export const DEFAULT_EFFECTS: EffectSettings = {

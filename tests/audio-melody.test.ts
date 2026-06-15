@@ -73,6 +73,73 @@ describe('Audio Melody Generator', () => {
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
     });
+
+    it('should inject motif notes and preserve relative intervals and timing', () => {
+      // Original motif: C4, E4, G4 with specific durations
+      const motifNotes = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 0.5 },
+        { pitch: 64, velocity: 80, startTime: 0.5, duration: 0.5 },
+        { pitch: 67, velocity: 80, startTime: 1.0, duration: 1.0 },
+      ];
+
+      const motif = {
+        id: 'motif1',
+        name: 'Test Motif',
+        notes: motifNotes,
+        originalBpm: 120,
+        createdAt: new Date().toISOString()
+      };
+
+      // Generate a new melody using the motif but with different scale/key
+      // Target key: D major (rootMidi 62)
+      // Since it maps to the middle of the extended scale, absolute pitches will change,
+      // but intervals should roughly match (+4, +3 semitones relative to first note in the scale)
+      const generatedNotes = generateMelodyNotes(62, 'major', 'electronic', 'happy', 120, 1, 0.5, [], 'verse', motif);
+
+      expect(generatedNotes.length).toBeGreaterThanOrEqual(3);
+
+      // Check relative timing is preserved (BPM is the same, so times should match exactly for first iteration)
+      expect(generatedNotes[0].startTime).toBeCloseTo(0);
+      expect(generatedNotes[0].duration).toBeCloseTo(0.5);
+      expect(generatedNotes[1].startTime).toBeCloseTo(0.5);
+      expect(generatedNotes[1].duration).toBeCloseTo(0.5);
+      expect(generatedNotes[2].startTime).toBeCloseTo(1.0);
+      expect(generatedNotes[2].duration).toBeCloseTo(1.0);
+
+      // Check relative intervals.
+      // Original intervals from first note: 0, +4, +7
+      const interval1 = generatedNotes[1].pitch - generatedNotes[0].pitch;
+      const interval2 = generatedNotes[2].pitch - generatedNotes[0].pitch;
+
+      // Major scale intervals are close enough, depending on scale snapping
+      // It should follow roughly the original contour.
+      expect(interval1).toBeGreaterThan(0);
+      expect(interval2).toBeGreaterThan(interval1);
+    });
+
+    it('should scale motif timing when BPM changes', () => {
+      const motifNotes = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 0.5 },
+        { pitch: 64, velocity: 80, startTime: 0.5, duration: 0.5 },
+      ];
+
+      const motif = {
+        id: 'motif1',
+        name: 'Test Motif',
+        notes: motifNotes,
+        originalBpm: 60,
+        createdAt: new Date().toISOString()
+      };
+
+      // Generate at 120 BPM (twice as fast), so times should be halved
+      const generatedNotes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 1, 0.5, [], 'verse', motif);
+
+      expect(generatedNotes.length).toBeGreaterThanOrEqual(2);
+      expect(generatedNotes[0].startTime).toBeCloseTo(0);
+      expect(generatedNotes[0].duration).toBeCloseTo(0.25);
+      expect(generatedNotes[1].startTime).toBeCloseTo(0.25);
+      expect(generatedNotes[1].duration).toBeCloseTo(0.25);
+    });
   });
 
   describe('generateArpeggioNotes', () => {
