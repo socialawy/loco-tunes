@@ -100,6 +100,22 @@ describe('Audio Integration: Full Generation Pipeline', () => {
       expect(track.stems.length).toBe(4);
       expect(track.params.genre).toBe('jazz');
     });
+
+    it('should generate a track based on a motif', async () => {
+      const mockMotif = {
+        id: 'motif1',
+        name: 'Saved Motif',
+        notes: [{ pitch: 60, velocity: 100, startTime: 0, duration: 1 }],
+        originalBpm: 120,
+        originalKey: 'C',
+        originalScale: 'major',
+        createdAt: new Date().toISOString()
+      };
+      const track = await generateTrack({ ...baseParams, motif: mockMotif });
+      expect(track.stems.length).toBe(4);
+      expect(track.params.motif).toBeDefined();
+      expect(track.params.motif?.id).toBe('motif1');
+    });
   });
 
   describe('Track Generation Edge Cases', () => {

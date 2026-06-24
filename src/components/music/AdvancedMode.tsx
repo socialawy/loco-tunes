@@ -6,6 +6,14 @@ import type { StemType } from '@/types/music';
 import { STEM_COLORS } from '@/types/music';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const STEM_LABELS: Record<StemType, string> = {
   drums: 'Drums',
@@ -15,7 +23,7 @@ const STEM_LABELS: Record<StemType, string> = {
 };
 
 export function AdvancedMode() {
-  const { currentTrack, currentTime, isPlaying, updateCurrentTime, restartPlayback, stopTrack, playTrack } = useMusicStore();
+  const { currentTrack, currentTime, isPlaying, updateCurrentTime, restartPlayback, stopTrack, playTrack, params, setParams, savedMotifs } = useMusicStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -212,7 +220,42 @@ export function AdvancedMode() {
   const totalWidth = currentTrack.duration * pixelsPerSecond;
   
   return (
-    <div className="space-y-2">
+    <div className="space-y-4">
+      {/* Motif Selection (Advanced Mode) */}
+      <div className="p-4 bg-[#16162a] rounded-xl border border-[#2a2a4e]">
+        <Label className="text-gray-300 mb-2 block">Base next generation on Saved Motif (Optional)</Label>
+        <Select
+          value={params.motif?.id || 'none'}
+          onValueChange={(value) => {
+            if (value === 'none') {
+              setParams({ motif: undefined });
+            } else {
+              const motif = savedMotifs.find(m => m.id === value);
+              if (motif) setParams({ motif });
+            }
+          }}
+        >
+          <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+            <SelectValue placeholder="Select a motif" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+            <SelectItem value="none" className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]">
+              None (Random Melody)
+            </SelectItem>
+            {savedMotifs.map((motif) => (
+              <SelectItem
+                key={motif.id}
+                value={motif.id}
+                className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+              >
+                {motif.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
       {/* Timeline Controls */}
       <div className="flex items-center justify-between p-2 bg-[#16162a] rounded-lg border border-[#2a2a4e]">
         <div className="flex items-center gap-2">
@@ -290,6 +333,7 @@ export function AdvancedMode() {
       <p className="text-xs text-gray-600 text-center">
         Click anywhere on the timeline to seek • Drag to scrub
       </p>
+      </div>
     </div>
   );
 }

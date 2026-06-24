@@ -73,6 +73,36 @@ describe('Audio Melody Generator', () => {
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
     });
+
+    it('should generate notes based on provided Motif', () => {
+      const mockMotif = {
+        id: '123',
+        name: 'Test Motif',
+        originalBpm: 120,
+        originalKey: 'C',
+        originalScale: 'major',
+        createdAt: new Date().toISOString(),
+        notes: [
+          { pitch: 60, velocity: 100, startTime: 0, duration: 0.5 },
+          { pitch: 64, velocity: 90, startTime: 0.5, duration: 0.5 },
+        ]
+      };
+
+      // Generate with new BPM 60 (half speed), new root 62 (D)
+      const notes = generateMelodyNotes(62, 'minor', 'electronic', 'happy', 60, 2, 0.5, [], 'verse', mockMotif);
+
+      expect(notes.length).toBeGreaterThan(0);
+
+      // Should loop the motif. First note start time should be 0.
+      expect(notes[0].startTime).toBe(0);
+
+      // Since BPM is halved (120 -> 60), duration and next note start time should double.
+      // Note: First note duration 0.5 * (120/60) = 1.0
+      expect(notes[0].duration).toBe(1.0);
+
+      // Second note start time 0.5 * 2 = 1.0
+      expect(notes[1].startTime).toBe(1.0);
+    });
   });
 
   describe('generateArpeggioNotes', () => {

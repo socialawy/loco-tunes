@@ -5,10 +5,13 @@ import {
   getProjects,
   deleteProject,
   exportProject,
-  importProject
+  importProject,
+  saveMotifData,
+  loadMotifsData,
+  deleteMotifData
 } from '@/lib/storage';
 import * as idbKeyval from 'idb-keyval';
-import type { Project, Track, EffectSettings } from '@/types/music';
+import type { Project, Track, EffectSettings, Motif } from '@/types/music';
 
 // Mock idb-keyval completely
 vi.mock('idb-keyval', () => {
@@ -203,6 +206,54 @@ describe('Storage Utilities', () => {
       const file = new File(['{}'], 'invalid.json', { type: 'application/json' });
 
       await expect(importProject(file)).rejects.toThrow('Invalid project file format');
+    });
+  });
+
+  describe('Motif Storage', () => {
+    const mockMotif: Motif = {
+      id: 'motif1',
+      name: 'Test Motif',
+      notes: [{ pitch: 60, velocity: 100, startTime: 0, duration: 1 }],
+      originalBpm: 120,
+      originalKey: 'C',
+      originalScale: 'major',
+      createdAt: new Date().toISOString()
+    };
+
+    it('should save and load a motif', async () => {
+      await saveMotifData(mockMotif);
+      const motifs = await loadMotifsData();
+
+      expect(motifs.length).toBe(1);
+      expect(motifs[0].id).toBe('motif1');
+      expect(motifs[0].name).toBe('Test Motif');
+    });
+
+    it('should return motifs sorted by createdAt descending', async () => {
+      const motif2: Motif = {
+        ...mockMotif,
+        id: 'motif2',
+        createdAt: new Date(Date.now() + 1000).toISOString() // Newer
+      };
+
+      await saveMotifData(mockMotif);
+      await saveMotifData(motif2);
+
+      const motifs = await loadMotifsData();
+      expect(motifs.length).toBe(2);
+      expect(motifs[0].id).toBe('motif2'); // Newer comes first
+      expect(motifs[1].id).toBe('motif1');
+    });
+
+    it('should delete a motif', async () => {
+      await saveMotifData(mockMotif);
+      let motifs = await loadMotifsData();
+      expect(motifs.length).toBe(1);
+
+      await deleteMotifData('motif1');
+
+      motifs = await loadMotifsData();
+      expect(motifs.length).toBe(0);
     });
   });
 });

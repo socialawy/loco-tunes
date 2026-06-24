@@ -8,6 +8,16 @@ export type SectionType = 'intro' | 'verse' | 'chorus' | 'outro';
 
 export type StemType = 'drums' | 'bass' | 'melody' | 'harmony';
 
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  originalKey: string;
+  originalScale: string;
+  createdAt: string;
+}
+
 export interface GenerationParams {
   prompt: string;
   bpm: number;
@@ -17,6 +27,7 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  motif?: Motif;
 }
 
 export interface Note {
@@ -103,6 +114,9 @@ export interface MusicState {
   // Hardware
   hardwareTier: HardwareTier;
   
+  // Motifs
+  savedMotifs: Motif[];
+
   // UI state
   mode: 'simple' | 'advanced';
   isGenerating: boolean;
@@ -120,6 +134,11 @@ export interface MusicState {
   exportWav: () => void;
   exportMidi: () => void;
   setMode: (mode: 'simple' | 'advanced') => void;
+
+  // Motif actions
+  saveMotif: (name?: string) => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
+  fetchMotifs: () => Promise<void>;
 }
 
 // Scale definitions (semitone intervals from root)

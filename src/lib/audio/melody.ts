@@ -1,8 +1,8 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
-import { getScale } from './chords';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
+import { getScale, noteToMidi } from './chords';
 
 // Melody rhythm patterns by genre
 const MELODY_RHYTHM_PATTERNS: Record<Genre, number[][]> = {
@@ -66,12 +66,83 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
   
+  if (motif && motif.notes.length > 0) {
+    // We base generation entirely around looping/adapting the motif
+    const originalRootMidi = noteToMidi(motif.originalKey, 4);
+    const pitchDelta = rootMidi - originalRootMidi;
+
+    // Calculate the duration of the original motif to loop it properly
+    // Motif ends when its last note ends, rounded to nearest bar length ideally
+    const originalBeatDuration = 60 / motif.originalBpm;
+
+    const lastNote = motif.notes[motif.notes.length - 1];
+    let motifDuration = lastNote.startTime + lastNote.duration;
+
+    // Snap motif duration to full bars (assuming 4 beats per bar)
+    const originalBarDuration = 4 * originalBeatDuration;
+    motifDuration = Math.ceil(motifDuration / originalBarDuration) * originalBarDuration;
+    if (motifDuration === 0) motifDuration = originalBarDuration;
+
+    // Time scaling factor from old BPM to new BPM
+    const timeScale = motif.originalBpm / bpm;
+
+    // Loop the motif to fill the target numBars
+    let currentTime = 0;
+    const targetDuration = numBars * 4 * beatDuration;
+    let loopCount = 0;
+
+    while (currentTime < targetDuration) {
+      for (const note of motif.notes) {
+        // Stop if adding this note exceeds target duration
+        if (currentTime + (note.startTime * timeScale) >= targetDuration) {
+           break;
+        }
+
+        // Transpose the note by pitch delta, ensure it doesn't go completely out of standard MIDI range
+        let newPitch = note.pitch + pitchDelta;
+        // Keep in reasonable melody range roughly 48-84
+        while (newPitch < 48) newPitch += 12;
+        while (newPitch > 84) newPitch -= 12;
+
+        // Find nearest pitch in current scale
+        let nearestPitch = newPitch;
+        let minDiff = 12;
+        // Extend scale across a few octaves for finding nearest note
+        const extendedScale: number[] = [];
+        for (let octave = -2; octave <= 2; octave++) {
+          scale.forEach(n => extendedScale.push(n + octave * 12));
+        }
+
+        for (const scaleNote of extendedScale) {
+           const diff = Math.abs(scaleNote - newPitch);
+           if (diff < minDiff) {
+              minDiff = diff;
+              nearestPitch = scaleNote;
+           }
+        }
+
+        notes.push({
+          pitch: nearestPitch,
+          velocity: note.velocity,
+          startTime: currentTime + (note.startTime * timeScale),
+          duration: note.duration * timeScale,
+        });
+      }
+
+      loopCount++;
+      currentTime = loopCount * (motifDuration * timeScale);
+    }
+
+    return notes;
+  }
+
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
   for (let octave = -1; octave <= 2; octave++) {

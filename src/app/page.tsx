@@ -24,8 +24,12 @@ const getSnapshot = () => true;
 const getServerSnapshot = () => false;
 
 export default function LocoTunesPage() {
-  const { mode, setMode, currentTrack } = useMusicStore();
+  const { mode, setMode, currentTrack, fetchMotifs } = useMusicStore();
   const mounted = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
+
+  React.useEffect(() => {
+    fetchMotifs();
+  }, [fetchMotifs]);
   
   if (!mounted) {
     return (
