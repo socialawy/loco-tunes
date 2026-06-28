@@ -63,6 +63,7 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    savedMotifs,
   } = useMusicStore();
   
   const handleGenerate = () => {
@@ -257,6 +258,35 @@ export function SimpleMode() {
         />
       </div>
       
+      {/* Saved Motif Selection (Optional) */}
+      {savedMotifs && savedMotifs.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-gray-300">Use Saved Motif (Optional)</Label>
+          <Select
+            value={params.savedMotifId || 'none'}
+            onValueChange={(value) => setParams({ savedMotifId: value === 'none' ? undefined : value })}
+          >
+            <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+              <SelectItem value="none" className="text-gray-400 hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]">
+                None (Random Generation)
+              </SelectItem>
+              {savedMotifs.map((motif) => (
+                <SelectItem
+                  key={motif.id}
+                  value={motif.id}
+                  className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+                >
+                  {motif.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Generate Button */}
       <Button
         onClick={handleGenerate}

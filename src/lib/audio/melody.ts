@@ -1,7 +1,7 @@
 // Melody generation with scale-based patterns
 
 import { SCALES } from '@/types/music';
-import type { Genre, Note, Mood, SectionType } from '@/types/music';
+import type { Genre, Note, Mood, SectionType, Motif } from '@/types/music';
 import { getScale } from './chords';
 
 // Melody rhythm patterns by genre
@@ -66,12 +66,111 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  savedMotif?: Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
   
+  // If we have a saved motif, reuse its patterns
+  if (savedMotif && savedMotif.notes.length > 0) {
+    const originalRootMidi = getScale(0, savedMotif.originalKey || 'C')[0]; // Simplify by using just the key for pitch shift base
+    // Actually we can just use the provided originalKey and originalScale to find the exact shift.
+    // To keep it simple, we just find the difference in root MIDI.
+    // For a more precise shift, we could map it to the scale degrees, but direct shift is simpler.
+
+    // We need to calculate how much to shift the pitch
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const originalRootIndex = noteNames.indexOf(savedMotif.originalKey);
+    // Find the closest current root to the original root
+    const currentRootIndex = rootMidi % 12;
+    let pitchShift = currentRootIndex - originalRootIndex;
+    if (pitchShift > 6) pitchShift -= 12;
+    if (pitchShift < -6) pitchShift += 12;
+
+    const timeRatio = savedMotif.originalBpm / bpm;
+
+    // Motif is assumed to be 2 bars long (8 beats).
+    // We will loop it across the numBars.
+    const motifDurationBeats = 8;
+    const motifDurationSeconds = motifDurationBeats * (60 / savedMotif.originalBpm);
+    const newMotifDurationSeconds = motifDurationSeconds * timeRatio; // Not exactly, but we scale each note
+
+    let currentTime = 0;
+    let loopCount = 0;
+    const totalDurationSeconds = numBars * 4 * beatDuration;
+
+    while (currentTime < totalDurationSeconds) {
+      // Add slightly randomized variation based on complexity
+      const shouldVary = Math.random() < (complexity * 0.5);
+
+      for (const note of savedMotif.notes) {
+        const scaledStartTime = (note.startTime * timeRatio) + (loopCount * motifDurationBeats * beatDuration);
+        const scaledDuration = note.duration * timeRatio;
+
+        if (scaledStartTime >= totalDurationSeconds) break;
+
+        let targetPitch = note.pitch + pitchShift;
+
+        // Ensure pitch is within a reasonable range (MIDI 36 to 96)
+        while (targetPitch < 36) targetPitch += 12;
+        while (targetPitch > 96) targetPitch -= 12;
+
+        // Quantize targetPitch to the current scale
+        let minDiff = 100;
+        let bestPitch = targetPitch;
+
+        // Find closest note in current extended scale (we'll generate it on the fly)
+        for (let octave = -1; octave <= 3; octave++) {
+          for (const scaleNote of scale) {
+            const extendedNote = scaleNote + (octave * 12);
+            const diff = Math.abs(extendedNote - targetPitch);
+            if (diff < minDiff) {
+              minDiff = diff;
+              bestPitch = extendedNote;
+            }
+          }
+        }
+
+        // Occasionally vary the pitch if complexity allows
+        if (shouldVary && Math.random() < 0.2) {
+            // Shift up or down a scale degree
+            const scaleOffset = Math.random() > 0.5 ? 1 : -1;
+            // find index of bestPitch
+            let pitchIndex = 0;
+            const tempExtendedScale = [];
+            for (let octave = -1; octave <= 3; octave++) {
+                scale.forEach(n => tempExtendedScale.push(n + octave * 12));
+            }
+            pitchIndex = tempExtendedScale.indexOf(bestPitch);
+            if(pitchIndex !== -1) {
+                bestPitch = tempExtendedScale[Math.max(0, Math.min(tempExtendedScale.length - 1, pitchIndex + scaleOffset))];
+            }
+        }
+
+        // Dynamics based on section
+        let velocityMultiplier = 1.0;
+        if (sectionType === 'chorus') velocityMultiplier = 1.2;
+        if (sectionType === 'intro' || sectionType === 'outro') velocityMultiplier = 0.8;
+
+        const finalVelocity = Math.min(127, Math.max(0, Math.round(note.velocity * velocityMultiplier)));
+
+        notes.push({
+          pitch: bestPitch,
+          velocity: finalVelocity,
+          startTime: scaledStartTime,
+          duration: scaledDuration,
+        });
+      }
+
+      currentTime += motifDurationBeats * beatDuration;
+      loopCount++;
+    }
+
+    return notes;
+  }
+
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];
   for (let octave = -1; octave <= 2; octave++) {
@@ -256,4 +355,21 @@ export function quantizeNotes(notes: Note[], gridValue: number = 0.25): Note[] {
     startTime: Math.round(note.startTime / gridValue) * gridValue,
     duration: Math.round(note.duration / gridValue) * gridValue || gridValue,
   }));
+}
+
+// Extract a motif (first 2 bars) from a sequence of notes
+export function extractMotif(notes: Note[], bpm: number, numBars: number = 2): Note[] {
+  const beatDuration = 60 / bpm;
+  const targetDuration = numBars * 4 * beatDuration;
+
+  // Filter notes that start within the target duration
+  // Also adjust durations that might overflow
+  const motifNotes = notes
+    .filter(note => note.startTime < targetDuration)
+    .map(note => ({
+      ...note,
+      duration: Math.min(note.duration, targetDuration - note.startTime)
+    }));
+
+  return motifNotes;
 }

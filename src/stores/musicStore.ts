@@ -14,8 +14,9 @@ import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
-import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
-import type { Project } from '@/types/music';
+import { saveProject, loadProject, deleteProject, getProjects, saveMotifData, getMotifsData, deleteMotifData } from '@/lib/storage';
+import type { Project, Motif } from '@/types/music';
+import { extractMotif } from '@/lib/audio/melody';
 
 interface MusicStore {
   // Generation params
@@ -37,6 +38,9 @@ interface MusicStore {
   // Projects
   projects: Project[];
   currentProjectId: string | null;
+
+  // Motifs
+  savedMotifs: Motif[];
 
   // UI state
   mode: 'simple' | 'advanced';
@@ -62,6 +66,12 @@ interface MusicStore {
   updateCurrentTime: (time: number) => void;
   restartPlayback: () => void;
 
+  // Motif actions
+  saveMotif: () => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
+  playMotif: (id: string) => void;
+  fetchMotifs: () => Promise<void>;
+
   // Project Actions
   fetchProjects: () => Promise<void>;
   saveCurrentProject: () => Promise<void>;
@@ -80,6 +90,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   currentTrack: null,
   projects: [],
   currentProjectId: null,
+  savedMotifs: [],
   isPlaying: false,
   currentTime: 0,
   effects: DEFAULT_EFFECTS,
@@ -96,7 +107,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Generate a new track
   generateTrack: async () => {
-    const { params, hardwareTier } = get();
+    const { params, hardwareTier, savedMotifs } = get();
     
     // Limit duration based on hardware tier
     const limitedParams = {
@@ -110,7 +121,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     try {
       set({ generationProgress: 20 });
       
-      const track = await generateTrack(limitedParams);
+      const track = await generateTrack(limitedParams, savedMotifs);
       
       set({ 
         currentTrack: track, 
@@ -140,13 +151,13 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Regenerate a single stem
   regenerateStem: async (stemType: StemType) => {
-    const { currentTrack } = get();
+    const { currentTrack, savedMotifs } = get();
     if (!currentTrack) return;
     
     set({ isGenerating: true });
     
     try {
-      const newStem = await regenerateStem(currentTrack, stemType);
+      const newStem = await regenerateStem(currentTrack, stemType, savedMotifs);
       
       set((state) => ({
         currentTrack: state.currentTrack ? {
@@ -173,7 +184,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Generate a variation of a single stem
   generateStemVariation: async (stemType: StemType) => {
-    const { currentTrack } = get();
+    const { currentTrack, savedMotifs } = get();
     if (!currentTrack) return;
 
     const existingStem = currentTrack.stems.find(s => s.type === stemType);
@@ -182,7 +193,7 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
     set({ isGenerating: true });
 
     try {
-      const newStem = await generateStemVariation(existingStem, currentTrack.params);
+      const newStem = await generateStemVariation(existingStem, currentTrack.params, savedMotifs);
 
       set((state) => ({
         currentTrack: state.currentTrack ? {
@@ -417,6 +428,104 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Update current time (for seeking)
   updateCurrentTime: (time: number) => set({ currentTime: time }),
+
+  // --- Motif Actions ---
+
+  fetchMotifs: async () => {
+    try {
+      const motifs = await getMotifsData();
+      set({ savedMotifs: motifs });
+    } catch (err) {
+      console.error('Failed to fetch motifs:', err);
+    }
+  },
+
+  saveMotif: async () => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+
+    const melodyStem = currentTrack.stems.find(s => s.type === 'melody');
+    if (!melodyStem || melodyStem.notes.length === 0) {
+      toast.error('No melody stem found to extract motif from.');
+      return;
+    }
+
+    try {
+      const motifNotes = extractMotif(melodyStem.notes, currentTrack.params.bpm, 2);
+
+      const newMotif: Motif = {
+        id: crypto.randomUUID(),
+        name: `${currentTrack.params.genre} - ${currentTrack.params.mood} Motif`,
+        notes: motifNotes,
+        originalKey: currentTrack.params.key,
+        originalScale: currentTrack.params.scale,
+        originalBpm: currentTrack.params.bpm,
+        createdAt: new Date().toISOString(),
+      };
+
+      await saveMotifData(newMotif);
+      await get().fetchMotifs();
+      toast.success('Motif saved successfully!');
+    } catch (err) {
+      console.error('Failed to save motif:', err);
+      toast.error('Failed to save motif.');
+    }
+  },
+
+  deleteMotif: async (id: string) => {
+    try {
+      await deleteMotifData(id);
+      await get().fetchMotifs();
+      toast.success('Motif deleted.');
+    } catch (err) {
+      console.error('Failed to delete motif:', err);
+      toast.error('Failed to delete motif.');
+    }
+  },
+
+  playMotif: (id: string) => {
+    const { savedMotifs } = get();
+    const motif = savedMotifs.find(m => m.id === id);
+    if (!motif) return;
+
+    try {
+      const engine = getAudioEngine();
+      engine.stop(); // Stop current track if playing
+      get().stopTrack(); // Stop the global player as well
+
+      const motifStem: Stem = {
+        type: 'melody',
+        notes: motif.notes,
+        volume: 0.8,
+        muted: false,
+        solo: false,
+        color: '#22c55e',
+        synthParams: {
+          oscillatorType: 'sine',
+          attack: 0.05,
+          decay: 0.2,
+          sustain: 0.4,
+          release: 0.5,
+        }
+      };
+
+      // Create a dummy track to play the motif
+      const dummyTrack: Track = {
+        id: 'motif-preview',
+        name: motif.name,
+        params: DEFAULT_PARAMS,
+        duration: 8, // Roughly 2 bars at 120 bpm, will stop automatically
+        stems: [motifStem],
+        createdAt: new Date(),
+      };
+
+      engine.playTrack(dummyTrack, 0, DEFAULT_EFFECTS);
+      toast.info(`Playing motif: ${motif.name}`);
+    } catch (err) {
+      console.error('Failed to play motif preview:', err);
+      toast.error('Failed to play motif preview.');
+    }
+  },
 
   // --- Project Actions ---
 
