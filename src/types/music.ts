@@ -17,6 +17,7 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  motifId?: string;
 }
 
 export interface Note {
@@ -55,6 +56,14 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  createdAt: string;
+}
+
 
 export interface EffectSettings {
   reverb: {

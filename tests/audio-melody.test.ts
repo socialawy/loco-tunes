@@ -14,6 +14,25 @@ describe('Audio Melody Generator', () => {
       expect(notes[0].pitch).toBeGreaterThanOrEqual(48); // Between C3 and B6
     });
 
+
+    it('should generate notes using a provided motif', () => {
+      const motifNotes = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 0.5 },
+        { pitch: 62, velocity: 80, startTime: 0.5, duration: 0.5 },
+        { pitch: 64, velocity: 80, startTime: 1.0, duration: 1.0 },
+      ];
+
+      const notes = generateMelodyNotes(60, 'major', 'electronic', 'happy', 120, 2, 0.5, [], 'verse', motifNotes);
+
+      expect(notes.length).toBeGreaterThan(0);
+
+      // The first note should have the same duration as the motif's first note
+      expect(notes[0].duration).toBe(0.5);
+
+      // The generated pitch might be shifted to fit the new scale/octave, but it shouldn't crash
+      expect(notes[0].pitch).toBeDefined();
+    });
+
     it('should generate notes for hiphop genre', () => {
       const notes = generateMelodyNotes(60, 'minor', 'hiphop', 'dark', 90, 2, 0.5);
       expect(notes.length).toBeGreaterThan(0);

@@ -5,7 +5,10 @@ import {
   getProjects,
   deleteProject,
   exportProject,
-  importProject
+  importProject,
+  saveMotif,
+  getMotifs,
+  deleteMotif
 } from '@/lib/storage';
 import * as idbKeyval from 'idb-keyval';
 import type { Project, Track, EffectSettings } from '@/types/music';
@@ -44,6 +47,34 @@ global.File = class File extends Blob {
 } as any;
 
 describe('Storage Utilities', () => {
+
+  describe('Motif Storage', () => {
+    const mockMotif = {
+      id: 'motif-1',
+      name: 'Test Motif',
+      notes: [{ pitch: 60, velocity: 80, startTime: 0, duration: 1 }],
+      createdAt: new Date().toISOString(),
+    };
+
+    it('should save and load motifs', async () => {
+      await saveMotif(mockMotif);
+
+      const motifs = await getMotifs();
+      expect(motifs).toHaveLength(1);
+      expect(motifs[0].id).toBe('motif-1');
+      expect(motifs[0].name).toBe('Test Motif');
+      expect(motifs[0].notes).toHaveLength(1);
+    });
+
+    it('should delete motifs', async () => {
+      await saveMotif(mockMotif);
+      await deleteMotif('motif-1');
+
+      const motifs = await getMotifs();
+      expect(motifs).toHaveLength(0);
+    });
+  });
+
   const mockTrack: Track = {
     id: 'track1',
     name: 'My Track',

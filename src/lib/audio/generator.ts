@@ -33,7 +33,7 @@ interface ExtendedPerformance extends Performance {
   };
 }
 
-export async function generateTrack(params: GenerationParams): Promise<Track> {
+export async function generateTrack(params: GenerationParams, motifNotes?: Note[]): Promise<Track> {
   const { bpm, genre, mood, duration, key, scale, complexity } = params;
   
   // Convert key to MIDI note number
@@ -111,7 +111,7 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     bassNotes.push(...sectionBass);
 
     // Melody
-    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, motifNotes);
     const shiftedMelody = sectionMelody.map(n => ({
       ...n,
       startTime: n.startTime + sectionStartTime
@@ -264,7 +264,7 @@ export async function generateStemVariation(
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType, undefined); // Or we could pass motif here if we had it in track params
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);

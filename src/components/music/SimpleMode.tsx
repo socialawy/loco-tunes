@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,8 +63,15 @@ export function SimpleMode() {
     generationProgress,
     hardwareTier,
     currentTrack,
+    motifs,
+    fetchMotifs,
   } = useMusicStore();
   
+
+  useEffect(() => {
+    fetchMotifs();
+  }, [fetchMotifs]);
+
   const handleGenerate = () => {
     generateTrack();
   };
@@ -257,6 +264,36 @@ export function SimpleMode() {
         />
       </div>
       
+
+      {/* Motif Selection */}
+      {motifs && motifs.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-gray-300">Use Saved Motif</Label>
+          <Select
+            value={params.motifId || 'none'}
+            onValueChange={(value) => setParams({ motifId: value === 'none' ? undefined : value })}
+          >
+            <SelectTrigger className="bg-[#1a1a2e] border-[#2a2a4e] text-white">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#1a1a2e] border-[#2a2a4e]">
+              <SelectItem value="none" className="text-gray-400 hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]">
+                None (Generate from scratch)
+              </SelectItem>
+              {motifs.map((motif) => (
+                <SelectItem
+                  key={motif.id}
+                  value={motif.id}
+                  className="text-white hover:bg-[#2a2a4e] focus:bg-[#2a2a4e]"
+                >
+                  {motif.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Generate Button */}
       <Button
         onClick={handleGenerate}

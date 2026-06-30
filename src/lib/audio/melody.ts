@@ -66,7 +66,8 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motifNotes?: Note[]
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -78,6 +79,75 @@ export function generateMelodyNotes(
     scale.forEach(note => extendedScale.push(note + octave * 12));
   }
   
+
+  // If a motif is provided, reuse its rhythmic pattern and relative intervals
+  if (motifNotes && motifNotes.length > 0) {
+    // 1. Analyze the motif
+    // Find base pitch of the motif (e.g., the first note)
+    const motifBasePitch = motifNotes[0].pitch;
+
+    // We want to map motif notes to our new extendedScale.
+    // First, find the closest note in extendedScale to our new rootMidi
+    let newBaseScaleIndex = 0;
+    let minDiff = Infinity;
+    extendedScale.forEach((note, index) => {
+      const diff = Math.abs(note - rootMidi);
+      if (diff < minDiff) {
+        minDiff = diff;
+        newBaseScaleIndex = index;
+      }
+    });
+
+    // Shift base index to an octave higher for melody range
+    newBaseScaleIndex = Math.min(extendedScale.length - 1, newBaseScaleIndex + Math.floor(scale.length));
+
+    // Calculate motif duration to know how to loop it
+    const motifDuration = Math.max(...motifNotes.map(n => n.startTime + n.duration));
+    const targetDuration = numBars * 4 * beatDuration;
+
+    let currentTime = 0;
+
+    // 2. Loop the motif to fill the new duration
+    while (currentTime < targetDuration) {
+      for (const motifNote of motifNotes) {
+        const noteStartTime = currentTime + motifNote.startTime;
+
+        // Don't add notes past target duration
+        if (noteStartTime >= targetDuration) break;
+
+        // Calculate relative interval from motif base pitch in semitones
+        const interval = motifNote.pitch - motifBasePitch;
+
+        // Approximate this interval in scale degrees (roughly 1 scale degree per 2 semitones, just as a heuristic)
+        // A more robust way is to just add the interval to our rootMidi and snap to nearest scale note
+        const targetPitch = extendedScale[newBaseScaleIndex] + interval;
+
+        // Find closest pitch in extendedScale
+        let closestScaleIndex = newBaseScaleIndex;
+        let pitchMinDiff = Infinity;
+        extendedScale.forEach((note, index) => {
+          const diff = Math.abs(note - targetPitch);
+          if (diff < pitchMinDiff) {
+            pitchMinDiff = diff;
+            closestScaleIndex = index;
+          }
+        });
+
+        const pitch = extendedScale[closestScaleIndex];
+
+        notes.push({
+          pitch,
+          velocity: Math.max(0, Math.min(127, motifNote.velocity + (Math.random() * 10 - 5))),
+          startTime: noteStartTime,
+          duration: motifNote.duration,
+        });
+      }
+      currentTime += motifDuration || 2; // Move forward by motif length, fallback to 2s if 0
+    }
+
+    return notes;
+  }
+
   // Get mood-based parameters
   const { contour, jumpiness } = getMoodBias(mood);
   

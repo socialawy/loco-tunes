@@ -1,5 +1,5 @@
 import { get, set, keys, del } from 'idb-keyval';
-import type { Project, Track, Stem } from '@/types/music';
+import type { Project, Track, Stem, Motif } from '@/types/music';
 
 const STORE_PREFIX = 'loco-tunes-project-';
 
@@ -88,4 +88,30 @@ export async function importProject(file: File): Promise<Project> {
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsText(file);
   });
+}
+
+
+const MOTIF_STORE_PREFIX = 'loco-tunes-motif-';
+
+export async function saveMotif(motif: Motif): Promise<void> {
+  await set(`${MOTIF_STORE_PREFIX}${motif.id}`, motif);
+}
+
+export async function getMotifs(): Promise<Motif[]> {
+  const allKeys = await keys();
+  const motifKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith(MOTIF_STORE_PREFIX));
+
+  const motifs: Motif[] = [];
+  for (const key of motifKeys) {
+    const motif = await get<Motif>(key);
+    if (motif) {
+      motifs.push(motif);
+    }
+  }
+
+  return motifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function deleteMotif(id: string): Promise<void> {
+  await del(`${MOTIF_STORE_PREFIX}${id}`);
 }
