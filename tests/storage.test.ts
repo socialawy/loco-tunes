@@ -5,10 +5,14 @@ import {
   getProjects,
   deleteProject,
   exportProject,
-  importProject
+  importProject,
+  saveMotifData,
+  loadMotifData,
+  deleteMotifData,
+  getAllMotifsData
 } from '@/lib/storage';
 import * as idbKeyval from 'idb-keyval';
-import type { Project, Track, EffectSettings } from '@/types/music';
+import type { Project, Track, EffectSettings, Motif } from '@/types/music';
 
 // Mock idb-keyval completely
 vi.mock('idb-keyval', () => {
@@ -203,6 +207,49 @@ describe('Storage Utilities', () => {
       const file = new File(['{}'], 'invalid.json', { type: 'application/json' });
 
       await expect(importProject(file)).rejects.toThrow('Invalid project file format');
+    });
+  });
+
+  describe('Motif Storage', () => {
+    const mockMotif: Motif = {
+      id: 'motif-1',
+      name: 'Test Motif',
+      notes: [{ pitch: 60, velocity: 80, startTime: 0, duration: 1 }],
+      timestamp: Date.now(),
+    };
+
+    it('should save a motif and retrieve it', async () => {
+      await saveMotifData(mockMotif);
+
+      const motifs = await getAllMotifsData();
+      expect(motifs).toHaveLength(1);
+      expect(motifs[0].id).toBe('motif-1');
+      expect(motifs[0].name).toBe('Test Motif');
+
+      const loaded = await loadMotifData('motif-1');
+      expect(loaded).toBeDefined();
+      expect(loaded?.id).toBe('motif-1');
+    });
+
+    it('should overwrite existing motif if saved again', async () => {
+      await saveMotifData(mockMotif);
+
+      const updatedMotif = { ...mockMotif, name: 'Updated Motif' };
+      await saveMotifData(updatedMotif);
+
+      const motifs = await getAllMotifsData();
+      expect(motifs).toHaveLength(1);
+      expect(motifs[0].name).toBe('Updated Motif');
+    });
+
+    it('should delete a motif', async () => {
+      await saveMotifData(mockMotif);
+      let motifs = await getAllMotifsData();
+      expect(motifs).toHaveLength(1);
+
+      await deleteMotifData('motif-1');
+      motifs = await getAllMotifsData();
+      expect(motifs).toHaveLength(0);
     });
   });
 });

@@ -14,8 +14,11 @@ import { DEFAULT_PARAMS, DEFAULT_EFFECTS } from '@/types/music';
 import { generateTrack, regenerateStem, generateStemVariation, detectHardwareCapabilities } from '@/lib/audio/generator';
 import { getAudioEngine } from '@/lib/audio/engine';
 import { exportTrackToMidi, downloadBlob, generateFilename, audioBufferToWav } from '@/lib/audio/export';
-import { saveProject, loadProject, deleteProject, getProjects } from '@/lib/storage';
-import type { Project } from '@/types/music';
+import {
+  saveProject, loadProject, deleteProject, getProjects,
+  getAllMotifsData, saveMotifData, deleteMotifData
+} from '@/lib/storage';
+import type { Project, Motif } from '@/types/music';
 
 interface MusicStore {
   // Generation params
@@ -44,6 +47,10 @@ interface MusicStore {
   generationProgress: number;
   isExporting: boolean;
   
+  // Motifs
+  savedMotifs: Motif[];
+  useMotifId: string | undefined;
+
   // Actions
   setParams: (params: Partial<GenerationParams>) => void;
   generateTrack: () => Promise<void>;
@@ -68,6 +75,12 @@ interface MusicStore {
   loadProjectData: (id: string) => Promise<void>;
   deleteProjectData: (id: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
+
+  // Motif Actions
+  saveMotif: () => Promise<void>;
+  deleteMotif: (id: string) => Promise<void>;
+  loadMotifs: () => Promise<void>;
+  setUseMotifId: (id: string | undefined) => void;
 }
 
 // Variables for auto-save debounce
@@ -89,6 +102,9 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   generationProgress: 0,
   isExporting: false,
   
+  savedMotifs: [],
+  useMotifId: undefined,
+
   // Set generation params
   setParams: (newParams) => set((state) => ({
     params: { ...state.params, ...newParams },
@@ -96,13 +112,16 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
   
   // Generate a new track
   generateTrack: async () => {
-    const { params, hardwareTier } = get();
+    const { params, hardwareTier, useMotifId, savedMotifs } = get();
+
+    const motif = useMotifId ? savedMotifs.find(m => m.id === useMotifId) : undefined;
     
     // Limit duration based on hardware tier
     const limitedParams = {
       ...params,
       duration: Math.min(params.duration, hardwareTier.maxDuration),
       complexity: Math.min(params.complexity, hardwareTier.recommendedComplexity),
+      motifNotes: motif?.notes,
     };
     
     set({ isGenerating: true, generationProgress: 0 });
@@ -554,4 +573,63 @@ export const useMusicStore = create<MusicStore>((set, get) => ({
       toast.error('Failed to delete project');
     }
   },
+
+  // --- Motif Actions ---
+
+  saveMotif: async () => {
+    const { currentTrack } = get();
+    if (!currentTrack) return;
+
+    const melodyStem = currentTrack.stems.find(s => s.type === 'melody');
+    if (!melodyStem || !melodyStem.notes || melodyStem.notes.length === 0) {
+      toast.error('No melody notes found to save as motif');
+      return;
+    }
+
+    const newMotif: Motif = {
+      id: crypto.randomUUID(),
+      name: `Motif from ${currentTrack.name || 'Generated Track'}`,
+      notes: [...melodyStem.notes],
+      timestamp: Date.now()
+    };
+
+    try {
+      await saveMotifData(newMotif);
+      await get().loadMotifs();
+      toast.success('Motif saved successfully!');
+    } catch (error) {
+      console.error('Failed to save motif:', error);
+      toast.error('Failed to save motif');
+    }
+  },
+
+  deleteMotif: async (id: string) => {
+    try {
+      await deleteMotifData(id);
+
+      const { useMotifId } = get();
+      if (useMotifId === id) {
+        set({ useMotifId: undefined });
+      }
+
+      await get().loadMotifs();
+      toast.success('Motif deleted');
+    } catch (err) {
+      console.error('Failed to delete motif:', err);
+      toast.error('Failed to delete motif');
+    }
+  },
+
+  loadMotifs: async () => {
+    try {
+      const motifs = await getAllMotifsData();
+      // Sort by newest first
+      motifs.sort((a, b) => b.timestamp - a.timestamp);
+      set({ savedMotifs: motifs });
+    } catch (err) {
+      console.error('Failed to load motifs:', err);
+    }
+  },
+
+  setUseMotifId: (id: string | undefined) => set({ useMotifId: id }),
 }));

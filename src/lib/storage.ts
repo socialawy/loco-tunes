@@ -1,7 +1,8 @@
 import { get, set, keys, del } from 'idb-keyval';
-import type { Project, Track, Stem } from '@/types/music';
+import type { Project, Track, Stem, Motif } from '@/types/music';
 
 const STORE_PREFIX = 'loco-tunes-project-';
+const MOTIFS_KEY = 'loco-tunes-motifs';
 
 // Helper to sanitize AudioBuffer from track before saving or exporting
 function sanitizeTrackForStorage(track: Track): Track {
@@ -88,4 +89,35 @@ export async function importProject(file: File): Promise<Project> {
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsText(file);
   });
+}
+
+// Motif Storage Functions
+
+export async function getAllMotifsData(): Promise<Motif[]> {
+  const motifs = await get<Motif[]>(MOTIFS_KEY);
+  return motifs || [];
+}
+
+export async function saveMotifData(motif: Motif): Promise<void> {
+  const motifs = await getAllMotifsData();
+  const existingIndex = motifs.findIndex(m => m.id === motif.id);
+
+  if (existingIndex >= 0) {
+    motifs[existingIndex] = motif;
+  } else {
+    motifs.push(motif);
+  }
+
+  await set(MOTIFS_KEY, motifs);
+}
+
+export async function loadMotifData(id: string): Promise<Motif | undefined> {
+  const motifs = await getAllMotifsData();
+  return motifs.find(m => m.id === id);
+}
+
+export async function deleteMotifData(id: string): Promise<void> {
+  const motifs = await getAllMotifsData();
+  const updatedMotifs = motifs.filter(m => m.id !== id);
+  await set(MOTIFS_KEY, updatedMotifs);
 }

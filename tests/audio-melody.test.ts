@@ -73,6 +73,25 @@ describe('Audio Melody Generator', () => {
       expect(Array.isArray(simpleNotes)).toBe(true);
       expect(Array.isArray(complexNotes)).toBe(true);
     });
+
+    it('should use provided motifNotes when generating melody', () => {
+      const motif = [
+        { pitch: 60, velocity: 80, startTime: 0, duration: 0.5 },
+        { pitch: 62, velocity: 80, startTime: 0.5, duration: 0.5 }
+      ];
+
+      // Note: testing with small numBars to make sure motif fits or loops
+      const notes = generateMelodyNotes(65, 'major', 'electronic', 'happy', 120, 1, 0.5, [], 'verse', motif);
+
+      // The motif starts with pitch 60. rootMidi is 65.
+      // pitchOffset is 65 - 60 = 5.
+      // So the first note should ideally be close to 60 + 5 = 65.
+      expect(notes.length).toBeGreaterThan(0);
+
+      // Because we map to scale, it will snap to the nearest scale pitch,
+      // but the fact that it generated notes based on motif indicates it works.
+      expect(notes[0].pitch).toBe(65);
+    });
   });
 
   describe('generateArpeggioNotes', () => {

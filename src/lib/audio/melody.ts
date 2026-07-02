@@ -66,11 +66,75 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motifNotes?: Note[]
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
   const beatDuration = 60 / bpm;
+  const sectionDuration = numBars * 4 * beatDuration;
+
+  if (motifNotes && motifNotes.length > 0) {
+    // If a motif is provided, reuse its rhythmic and interval patterns
+    // First, find the bounding duration of the motif
+    const motifStart = Math.min(...motifNotes.map(n => n.startTime));
+    const motifEnd = Math.max(...motifNotes.map(n => n.startTime + n.duration));
+    const motifLength = Math.max(0.1, motifEnd - motifStart);
+
+    // Find the original root of the motif (approximate based on first note)
+    const originalRoot = motifNotes[0].pitch;
+    const pitchOffset = rootMidi - originalRoot;
+
+    // Loop the motif to fill the section
+    let currentTime = 0;
+    while (currentTime < sectionDuration) {
+      for (const n of motifNotes) {
+        const adjustedStart = currentTime + (n.startTime - motifStart);
+        if (adjustedStart >= sectionDuration) continue; // Don't overflow the section
+
+        let adjustedPitch = n.pitch + pitchOffset;
+
+        // Optionally adapt it to the current scale
+        // Find nearest pitch in the extended scale
+        const extendedScale: number[] = [];
+        for (let octave = -2; octave <= 3; octave++) {
+          scale.forEach(note => extendedScale.push(note + octave * 12));
+        }
+
+        let nearestDiff = Infinity;
+        let nearestPitch = adjustedPitch;
+        for (const scalePitch of extendedScale) {
+          const diff = Math.abs(scalePitch - adjustedPitch);
+          if (diff < nearestDiff) {
+            nearestDiff = diff;
+            nearestPitch = scalePitch;
+          }
+        }
+        adjustedPitch = nearestPitch;
+
+        // Dynamic velocity adjustments based on section
+        let baseVelocity = n.velocity;
+        if (sectionType === 'chorus') {
+           baseVelocity = Math.min(127, baseVelocity + 15);
+        } else if (sectionType === 'intro') {
+           baseVelocity = Math.max(0, baseVelocity - 15);
+        } else if (sectionType === 'outro') {
+           baseVelocity = Math.max(0, baseVelocity - 10);
+        }
+
+        notes.push({
+          pitch: adjustedPitch,
+          velocity: baseVelocity,
+          startTime: adjustedStart,
+          duration: n.duration
+        });
+      }
+      currentTime += Math.ceil(motifLength / beatDuration) * beatDuration; // jump to next loop, aligned to beats
+    }
+
+    return notes;
+  }
+
   
   // Extend scale across octaves for melody range
   const extendedScale: number[] = [];

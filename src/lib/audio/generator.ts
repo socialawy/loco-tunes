@@ -34,7 +34,7 @@ interface ExtendedPerformance extends Performance {
 }
 
 export async function generateTrack(params: GenerationParams): Promise<Track> {
-  const { bpm, genre, mood, duration, key, scale, complexity } = params;
+  const { bpm, genre, mood, duration, key, scale, complexity, motifNotes } = params;
   
   // Convert key to MIDI note number
   const rootMidi = noteToMidi(key, 4);
@@ -111,7 +111,7 @@ export async function generateTrack(params: GenerationParams): Promise<Track> {
     bassNotes.push(...sectionBass);
 
     // Melody
-    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type);
+    const sectionMelody = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, motifNotes);
     const shiftedMelody = sectionMelody.map(n => ({
       ...n,
       startTime: n.startTime + sectionStartTime
@@ -197,7 +197,7 @@ export async function regenerateStem(
         sectionNotes = generateBassNotes(shiftedChords, beatsPerBar, bpm, genre);
         break;
       case 'melody':
-        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type)
+        sectionNotes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, section.numBars, complexity, sectionRoots, section.type, track.params.motifNotes)
           .map(n => ({ ...n, startTime: n.startTime + sectionStartTime }));
         break;
       case 'harmony':
@@ -235,7 +235,7 @@ export async function generateStemVariation(
   stem: Stem,
   params: GenerationParams
 ): Promise<Stem> {
-  const { bpm, genre, mood, key, scale, complexity } = params;
+  const { bpm, genre, mood, key, scale, complexity, motifNotes } = params;
   const rootMidi = noteToMidi(key, 4);
   const beatsPerBar = 4;
   const beatDuration = 60 / bpm;
@@ -264,7 +264,7 @@ export async function generateStemVariation(
       notes = generateBassNotes(chords, beatsPerBar, bpm, genre);
       break;
     case 'melody':
-      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType);
+      notes = generateMelodyNotes(rootMidi, scale, genre, mood, bpm, numBars, variedComplexity, chordRoots, sectionType, motifNotes);
       break;
     case 'harmony':
       notes = generateHarmonyNotes(chords, beatsPerBar, bpm);

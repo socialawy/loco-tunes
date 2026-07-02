@@ -15,8 +15,9 @@ import {
   ExportPanel,
   HardwareSettings,
   ProjectBrowser,
+  MotifLibrary,
 } from '@/components/music';
-import { Music, Settings2, Layers, Sparkles, FolderOpen } from 'lucide-react';
+import { Music, Settings2, Layers, Sparkles, FolderOpen, Bookmark } from 'lucide-react';
 
 // Simple mounted check without useEffect
 const emptySubscribe = () => () => {};
@@ -24,9 +25,16 @@ const getSnapshot = () => true;
 const getServerSnapshot = () => false;
 
 export default function LocoTunesPage() {
-  const { mode, setMode, currentTrack } = useMusicStore();
+  const { mode, setMode, currentTrack, loadMotifs, fetchProjects } = useMusicStore();
   const mounted = useSyncExternalStore(emptySubscribe, getSnapshot, getServerSnapshot);
   
+  React.useEffect(() => {
+    if (mounted) {
+      loadMotifs();
+      fetchProjects();
+    }
+  }, [mounted, loadMotifs, fetchProjects]);
+
   if (!mounted) {
     return (
       <div className="min-h-screen bg-[#0a0a14] flex items-center justify-center">
@@ -150,6 +158,13 @@ export default function LocoTunesPage() {
                     <FolderOpen className="h-4 w-4 mr-2" />
                     Projects
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="motifs"
+                    className="data-[state=active]:bg-violet-500 data-[state=active]:text-white"
+                  >
+                    <Bookmark className="h-4 w-4 mr-2" />
+                    Motifs
+                  </TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="timeline" className="mt-4">
@@ -170,6 +185,10 @@ export default function LocoTunesPage() {
 
                 <TabsContent value="projects" className="mt-4">
                   <ProjectBrowser />
+                </TabsContent>
+
+                <TabsContent value="motifs" className="mt-4">
+                  <MotifLibrary />
                 </TabsContent>
               </Tabs>
             ) : (
