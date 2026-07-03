@@ -17,6 +17,17 @@ export interface GenerationParams {
   key: string;
   scale: 'major' | 'minor' | 'pentatonic' | 'blues' | 'dorian';
   complexity: number; // 0-1
+  savedMotifId?: string; // Optional motif to use for melody generation
+}
+
+export interface Motif {
+  id: string;
+  name: string;
+  notes: Note[];
+  originalBpm: number;
+  originalKey: string;
+  originalScale: string;
+  createdAt: string; // ISO date string for JSON serialization
 }
 
 export interface Note {

@@ -66,7 +66,8 @@ export function generateMelodyNotes(
   numBars: number,
   complexity: number,
   chordRoots: number[] = [],
-  sectionType: SectionType = 'verse'
+  sectionType: SectionType = 'verse',
+  motif?: import('@/types/music').Motif
 ): Note[] {
   const notes: Note[] = [];
   const scale = getScale(rootMidi, scaleName);
@@ -78,6 +79,47 @@ export function generateMelodyNotes(
     scale.forEach(note => extendedScale.push(note + octave * 12));
   }
   
+  // If a motif is provided, use it as a pattern
+  if (motif && motif.notes.length > 0) {
+    const originalRootMidi = getScale(0, motif.originalScale)[0] + Math.floor(motif.notes[0].pitch / 12) * 12; // Approximation, we can just use relative interval
+    const timeScale = motif.originalBpm / bpm;
+
+    // Find the original root note used to offset (assuming motif was generated in a specific key)
+    // Actually, we can just find the pitch difference between the current root and the motif's original root
+    const rootDiff = rootMidi - (getScale(0, motif.originalKey)[0] + 60); // assuming middle C for original key calculation
+    // A better approach is to map relative to the original key
+
+    // Calculate pitch offset directly
+    // Let's use the simplest method: shift by the difference in root notes
+    // First, find the root midi note of the original motif's key (octave 4)
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const originalKeyIndex = noteNames.indexOf(motif.originalKey);
+    const currentKeyIndex = rootMidi % 12;
+    const pitchOffset = currentKeyIndex - originalKeyIndex;
+
+    const motifDuration = Math.max(...motif.notes.map(n => n.startTime + n.duration)) * timeScale;
+    let currentTime = 0;
+
+    while (currentTime < numBars * 4 * beatDuration) {
+      for (const note of motif.notes) {
+        const scaledStartTime = note.startTime * timeScale;
+        if (currentTime + scaledStartTime >= numBars * 4 * beatDuration) break;
+
+        notes.push({
+          pitch: note.pitch + pitchOffset,
+          velocity: note.velocity,
+          startTime: currentTime + scaledStartTime,
+          duration: note.duration * timeScale,
+        });
+      }
+
+      currentTime += motifDuration;
+      if (motifDuration <= 0) break; // Safety against infinite loops
+    }
+
+    return notes;
+  }
+
   // Get mood-based parameters
   const { contour, jumpiness } = getMoodBias(mood);
   
